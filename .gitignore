@@ -1,0 +1,58 @@
+## Build results
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+BenchmarkDotNet.Artifacts/
+
+## Visual Studio / Rider / VS Code
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+
+## Test results
+[Tt]est[Rr]esult*/
+coverage/
+*.coverage
+*.coveragexml
+*.trx
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+!packages/build/
+
+## SQLite (default local store)
+*.db
+*.db-shm
+*.db-wal
+gatehouse.db*
+
+## Secrets — never commit
+*.pfx
+*.p12
+appsettings.Local.json
+appsettings.*.Local.json
+.env
+.env.*
+secrets.json
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Tooling output
+*.binlog
+sbom/

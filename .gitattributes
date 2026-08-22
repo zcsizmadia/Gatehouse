@@ -1,0 +1,21 @@
+* text=auto eol=lf
+
+*.sln        text eol=crlf
+*.slnx       text eol=crlf
+*.csproj     text eol=lf
+*.props      text eol=lf
+*.targets    text eol=lf
+*.cs         text eol=lf diff=csharp
+*.md         text eol=lf
+*.json       text eol=lf
+*.yml        text eol=lf
+*.yaml       text eol=lf
+*.ps1        text eol=crlf
+*.sh         text eol=lf
+*.service    text eol=lf
+Dockerfile   text eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.snk binary
