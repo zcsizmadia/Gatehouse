@@ -65,6 +65,19 @@ public class SqliteRequestLogStoreTests
 
         IReadOnlyList<RequestRecord> read = await store.GetRecentAsync(10);
 
+        // Asserted first: the store swallows write failures by design, so without this a
+        // database error presents as "expected 1, got 0" with no hint of the cause.
+        await Assert.That(db.Logger.FailureSummary).IsEqualTo("(no failures logged)");
+
+        // Distinguishes "the row was never written" from "the row is there but the reader
+        // cannot see it" — two very different bugs with the same symptom. The writer trace is
+        // attached because the store reports problems through the logger rather than by
+        // throwing, so without it a failure here says nothing about the cause.
+        long directCount = await db.CountRowsDirectlyAsync();
+        await Assert.That(directCount)
+            .IsEqualTo(1)
+            .Because($"writer trace was:{Environment.NewLine}{db.Logger.Trace}");
+
         await Assert.That(read).Count().IsEqualTo(1);
         await Assert.That(read[0].Id).IsEqualTo("chatcmpl-1");
         await Assert.That(read[0].RequestedModel).IsEqualTo("gpt-4o-mini");
@@ -243,9 +256,34 @@ public class SqliteRequestLogStoreTests
             Path.GetTempPath(),
             $"gatehouse-test-{Guid.NewGuid():N}.db");
 
-        public string ConnectionString => $"Data Source={_path}";
+        /// <remarks>
+        /// <c>Pooling=False</c> matters here, and not for performance. Microsoft.Data.Sqlite
+        /// pools by connection string, and the only way to force a pooled handle closed is
+        /// <c>SqliteConnection.ClearAllPools()</c> — which is process-global. TUnit runs tests
+        /// in parallel, so one test tearing down its database would close connections
+        /// belonging to another, and the victim would read back zero rows. Opting out of
+        /// pooling makes each connection close deterministically on dispose, so cleanup is
+        /// local to the test that owns it.
+        /// </remarks>
+        public string ConnectionString => $"Data Source={_path};Pooling=False";
 
         public SqliteConnection Connect() => new(ConnectionString);
+
+        /// <summary>
+        /// Counts rows with a connection of its own, bypassing the store entirely.
+        /// </summary>
+        public async Task<long> CountRowsDirectlyAsync()
+        {
+            await using SqliteConnection connection = Connect();
+            await connection.OpenAsync();
+
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM request_log;";
+            return (long)(await command.ExecuteScalarAsync() ?? 0L);
+        }
+
+        /// <summary>Failures the store logged, so a test can assert on the cause.</summary>
+        public CapturingLogger<SqliteRequestLogStore> Logger { get; } = new();
 
         public SqliteRequestLogStore CreateStore()
         {
@@ -254,17 +292,13 @@ public class SqliteRequestLogStoreTests
                 Store = new StoreOptions { ConnectionString = ConnectionString, AutoMigrate = true },
             };
 
-            return new SqliteRequestLogStore(
-                Options.Create(options),
-                NullLogger<SqliteRequestLogStore>.Instance);
+            return new SqliteRequestLogStore(Options.Create(options), Logger);
         }
 
         public void Dispose()
         {
-            // Microsoft.Data.Sqlite pools connections, so the file stays locked until the
-            // pool is cleared. Without this the cleanup silently fails on Windows.
-            SqliteConnection.ClearAllPools();
-
+            // No ClearAllPools() here: it is process-global and would interfere with tests
+            // running in parallel. Pooling is disabled on the connection string instead.
             foreach (string suffix in new[] { "", "-wal", "-shm" })
             {
                 try

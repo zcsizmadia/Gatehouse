@@ -54,7 +54,10 @@ internal sealed class GatehouseHost : IAsyncDisposable
         {
             Gatehouse = new
             {
-                Store = new { ConnectionString = $"Data Source={databasePath}", AutoMigrate = true },
+                // Pooling=False so the file handle closes deterministically on dispose. The
+                // alternative, SqliteConnection.ClearAllPools(), is process-global and would
+                // disrupt the other integration tests running in parallel.
+                Store = new { ConnectionString = $"Data Source={databasePath};Pooling=False", AutoMigrate = true },
                 Telemetry = new { ServiceName = "gatehouse-tests" },
                 Providers = new Dictionary<string, object>
                 {
@@ -98,8 +101,6 @@ internal sealed class GatehouseHost : IAsyncDisposable
         Client.Dispose();
         await _app.StopAsync();
         await _app.DisposeAsync();
-
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
 
         foreach (string path in new[] { _configPath, _databasePath, _databasePath + "-wal", _databasePath + "-shm" })
         {

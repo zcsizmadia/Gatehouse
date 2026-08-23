@@ -199,6 +199,14 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
         {
             // Host shutdown. Anything still queued is written below.
         }
+        catch (Exception ex)
+        {
+            // BackgroundService awaits ExecuteAsync with ConfigureAwaitOptions.SuppressThrowing,
+            // so anything escaping here vanishes without trace: the request log silently stops
+            // working and the only symptom is a gap in the data, discovered weeks later by
+            // whoever needed it. Log it, then still attempt the drain below.
+            _logger.WriterStoppedUnexpectedly(ex);
+        }
 
         // Drain rather than abandon: a record accepted from the request path has already been
         // treated as recorded, and losing it would put a hole in the usage history.
@@ -206,6 +214,20 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
     }
 
     private async Task DrainRemainingAsync(SqliteConnection connection)
+    {
+        try
+        {
+            await DrainRemainingCoreAsync(connection);
+        }
+        catch (Exception ex)
+        {
+            // Same reasoning as ExecuteAsync: an exception on the shutdown path would be
+            // suppressed by the host, turning lost records into a silent gap.
+            _logger.WriterStoppedUnexpectedly(ex);
+        }
+    }
+
+    private async Task DrainRemainingCoreAsync(SqliteConnection connection)
     {
         List<RequestRecord> remaining = [];
         while (_queue.Reader.TryRead(out RequestRecord? record))
@@ -285,6 +307,7 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
             }
 
             await transaction.CommitAsync(cancellationToken);
+            _logger.RequestLogBatchWritten(batch.Count);
         }
         catch (SqliteException ex)
         {
@@ -298,16 +321,28 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
     /// <summary>Ensures queued records are flushed when the host shuts down.</summary>
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        // Complete the writer before signalling the stop, so the drain loop sees an
-        // end-of-stream rather than racing a cancellation and leaving records behind.
+        // Complete the writer first, so the drain loop sees an end-of-stream rather than
+        // racing a cancellation and leaving records behind.
         _queue.Writer.TryComplete();
         await base.StopAsync(cancellationToken);
 
-        if (_connection is not null)
+        if (_connection is null)
         {
-            await _connection.DisposeAsync();
-            _connection = null;
+            return;
         }
+
+        // The final drain happens here, not only at the end of ExecuteAsync.
+        //
+        // BackgroundService offers no guarantee that ExecuteAsync has begun executing by the
+        // time StopAsync runs — StartAsync stores the task, and on a fast start/stop the body
+        // may never have been scheduled at all. Relying on the loop's own trailing drain
+        // therefore loses every queued record in exactly that case, silently and with nothing
+        // logged. Draining here is deterministic regardless of what the loop managed to do,
+        // and is safe to run twice because the queue is empty the second time.
+        await DrainRemainingAsync(_connection);
+
+        await _connection.DisposeAsync();
+        _connection = null;
     }
 
     /// <inheritdoc />
