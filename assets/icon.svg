@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     fill="none" role="img" aria-label="Gatehouse">
+  <title>Gatehouse</title>
+
+  <!--
+    A gate arch with a portcullis inside it, reduced to the fewest strokes that
+    still say both things.
+
+    Flat, one colour, no container tile, no gradient. The arch is a thick stroke
+    with round caps; the portcullis is a rail with rounded terminals and three bars
+    ending in spear points — the tips are what make it a portcullis being lowered
+    rather than a decorative grid.
+
+    Drawn in `currentColor` so a single file works on any background: the README
+    supplies the ink per colour scheme, and anywhere else it inherits the
+    surrounding text colour. The rendered PNG bakes in the dark ink, because the
+    NuGet gallery shows package icons on white.
+
+    Geometry sits on whole and half units of a 64 grid, and the bar tops clear the
+    inner face of the arch by design rather than by luck: at the outermost bar the
+    inner edge of the crown is y=18.6, and the bars start at y=19.
+  -->
+
+  <g stroke="currentColor" fill="none" color="#221F2B">
+
+    <!-- The arch. Radius 19 about (32,30), legs carried down to a round foot. -->
+    <path d="M13 54 V30 A19 19 0 0 1 51 30 V54"
+          stroke-width="7" stroke-linecap="round"/>
+
+    <!-- The rail. Round caps give the terminals that sit just inside the jambs. -->
+    <path d="M21 33 H43" stroke-width="5" stroke-linecap="round"/>
+
+    <!-- Three bars, each ending in a point. -->
+    <g stroke="none" fill="currentColor">
+      <path d="M21.5 19 H26.5 V42 L24 48 L21.5 42 Z"/>
+      <path d="M29.5 19 H34.5 V42 L32 48 L29.5 42 Z"/>
+      <path d="M37.5 19 H42.5 V42 L40 48 L37.5 42 Z"/>
+    </g>
+
+  </g>
+</svg>

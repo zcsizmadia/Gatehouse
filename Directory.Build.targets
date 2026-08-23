@@ -33,14 +33,22 @@
     <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
   </PropertyGroup>
 
-  <!-- Symbol packages and the shared README/icon only apply to packable libs. -->
+  <!--
+    Symbol packages, the package readme and the icon only apply to packable libs.
+
+    The package readme is a dedicated short file, not the repository README. The
+    repository README opens with a centred HTML lock-up and relative image paths;
+    NuGet.org's renderer accepts neither, so packing it would produce a package
+    page whose first screenful is either escaped markup or nothing at all. The two
+    documents have different jobs and do not duplicate each other.
+  -->
   <PropertyGroup Condition="'$(IsPackable)' == 'true'">
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(IsPackable)' == 'true'">
-    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)assets\nuget-readme.md" Pack="true" PackagePath="\README.md" Visible="false" />
     <None Include="$(MSBuildThisFileDirectory)assets\icon.png" Pack="true" PackagePath="\" Visible="false"
           Condition="Exists('$(MSBuildThisFileDirectory)assets\icon.png')" />
   </ItemGroup>

@@ -115,6 +115,32 @@ Optional backends for shops that want them are fine; required ones are not.
   the README. Silent abandonment is the failure mode this clause exists to
   prevent.
 
+## The name and the marks
+
+The Apache-2.0 licence covers the code. It does not cover the name "Gatehouse" or
+the marks in [assets/](./assets/), which exist so that people can tell whether
+they are running this project or something else.
+
+Always allowed, without asking:
+
+- Saying your software works with, integrates with, or is built on Gatehouse.
+- Linking to the project and using the marks to do it.
+- Unmodified redistribution of a release, marks intact.
+- Talking about Gatehouse — reviews, comparisons, talks, books, courses.
+
+Please ask first:
+
+- Naming a product, service, or company after Gatehouse, or with "Gatehouse" in
+  the name.
+- Distributing a *modified* build under the Gatehouse name. Fork freely — that
+  right is unconditional — but give the fork its own name, because users who hit a
+  bug need to know whose bug it is.
+- Using the marks in a way that suggests the project endorses or certifies you.
+
+There is no fee and no licence to sign; the answer is usually yes. Open an issue.
+On donation to the .NET Foundation, the marks transfer with the project, which is
+the point of having them held somewhere other than one person's account.
+
 ## Code of conduct
 
 The [Contributor Covenant](./CODE_OF_CONDUCT.md) applies to all project spaces.
