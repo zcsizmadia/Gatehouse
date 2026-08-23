@@ -1,0 +1,94 @@
+name: Bug report
+description: Something behaves differently from how it is documented.
+labels: [bug, needs-triage]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. If it is a security vulnerability, please close this and
+        use [private reporting](https://github.com/zcsizmadia/Gatehouse/security/advisories/new)
+        instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you observed, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: |
+        The smallest set of steps that shows the problem. A configuration file and a `curl`
+        command is ideal.
+      placeholder: |
+        1. Configuration (redact credentials):
+           ...
+        2. Request:
+           curl http://localhost:8080/v1/chat/completions -d '...'
+        3. Response:
+           ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Gatehouse version
+      description: The output of `gatehouse --version`, or the container tag.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How is it deployed
+      options:
+        - Console / dotnet run
+        - Container
+        - systemd unit
+        - Windows Service
+        - Kubernetes
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build
+    attributes:
+      label: Which build
+      description: NativeAOT failures are usually different from JIT failures, so this matters.
+      options:
+        - NativeAOT (published binary or container image)
+        - JIT (dotnet run, or a framework-dependent publish)
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider
+      description: Which upstream this involves, if any — OpenAI, Azure OpenAI, Ollama, vLLM…
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Relevant log output. **Redact API keys and prompt content before pasting.**
+      render: text
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have redacted credentials and any sensitive prompt content from this report.
+          required: true
+        - label: I have checked the [roadmap](https://github.com/zcsizmadia/Gatehouse/blob/main/ROADMAP.md) in case this is a feature that has not shipped yet.
+          required: true

@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/zcsizmadia/Gatehouse/security/advisories/new
+    about: Do not open a public issue. Report privately here; see SECURITY.md for what to expect.
+
+  - name: Question or discussion
+    url: https://github.com/zcsizmadia/Gatehouse/discussions
+    about: Usage questions, deployment advice, and anything that is not yet a concrete bug or proposal.
+
+  - name: Read the roadmap first
+    url: https://github.com/zcsizmadia/Gatehouse/blob/main/ROADMAP.md
+    about: Gatehouse says no to more than it says yes to. The roadmap lists what is deliberately not planned.
