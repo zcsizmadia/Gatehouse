@@ -1,0 +1,52 @@
+<Project>
+
+  <!-- ============================================================
+       Conventions applied after each project's own properties, so that
+       they can key off TargetFrameworks / project name.
+       ============================================================ -->
+
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('.Tests'))">
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Test assemblies are never shipped, so documentation and API-surface
+         analyzers only add noise here. -->
+    <NoWarn>$(NoWarn);CA1707;CA2007;CA1861;CA5394</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(MSBuildProjectName.Contains('Benchmarks'))">
+    <IsBenchmarkProject>true</IsBenchmarkProject>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <NoWarn>$(NoWarn);CA1707;CA1822</NoWarn>
+  </PropertyGroup>
+
+  <!-- NativeAOT readiness is a Phase 0 gate, so shipping code is held to the
+       trimming and AOT analyzers from the first commit rather than retrofitted
+       once the codebase is too large to fix. -->
+  <PropertyGroup Condition="'$(IsTestProject)' != 'true' AND '$(IsBenchmarkProject)' != 'true'">
+    <IsAotCompatible Condition="'$(TargetFramework)' != 'netstandard2.0'">true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+  </PropertyGroup>
+
+  <!-- Symbol packages and the shared README/icon only apply to packable libs. -->
+  <PropertyGroup Condition="'$(IsPackable)' == 'true'">
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)assets\icon.png" Pack="true" PackagePath="\" Visible="false"
+          Condition="Exists('$(MSBuildThisFileDirectory)assets\icon.png')" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="!Exists('$(MSBuildThisFileDirectory)assets\icon.png')">
+    <PackageIcon />
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,102 @@
+# Gatehouse — editor and analyzer configuration
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{json,yml,yaml,md,csproj,props,targets,slnx}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{sln,slnx}]
+end_of_line = crlf
+
+[*.ps1]
+end_of_line = crlf
+
+[*.cs]
+# --- using directives ---
+csharp_using_directive_placement = outside_namespace:warning
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+
+# --- language features ---
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_prefer_braces = true:warning
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:silent
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_style_prefer_primary_constructors = true:suggestion
+csharp_style_prefer_pattern_matching = true:suggestion
+csharp_style_throw_expression = true:suggestion
+csharp_prefer_simple_using_statement = true:suggestion
+csharp_style_prefer_range_operator = true:suggestion
+
+# --- this. qualification ---
+dotnet_style_qualification_for_field = false:warning
+dotnet_style_qualification_for_property = false:warning
+dotnet_style_qualification_for_method = false:warning
+dotnet_style_qualification_for_event = false:warning
+
+# --- modifiers ---
+csharp_preferred_modifier_order = public,private,protected,internal,file,static,extern,new,virtual,abstract,sealed,override,readonly,unsafe,required,volatile,async:warning
+dotnet_style_readonly_field = true:warning
+visual_basic_style_unnecessary_parentheses = never
+
+# --- naming: interfaces start with I ---
+dotnet_naming_rule.interfaces_start_with_i.severity = warning
+dotnet_naming_rule.interfaces_start_with_i.symbols = interface_symbol
+dotnet_naming_rule.interfaces_start_with_i.style = i_prefix_pascal
+dotnet_naming_symbols.interface_symbol.applicable_kinds = interface
+dotnet_naming_style.i_prefix_pascal.required_prefix = I
+dotnet_naming_style.i_prefix_pascal.capitalization = pascal_case
+
+# --- naming: private fields are _camelCase ---
+dotnet_naming_rule.private_fields_underscore.severity = warning
+dotnet_naming_rule.private_fields_underscore.symbols = private_field_symbol
+dotnet_naming_rule.private_fields_underscore.style = underscore_camel
+dotnet_naming_symbols.private_field_symbol.applicable_kinds = field
+dotnet_naming_symbols.private_field_symbol.applicable_accessibilities = private
+dotnet_naming_style.underscore_camel.required_prefix = _
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+
+# --- naming: constants are PascalCase ---
+dotnet_naming_rule.constants_pascal.severity = warning
+dotnet_naming_rule.constants_pascal.symbols = constant_symbol
+dotnet_naming_rule.constants_pascal.style = pascal
+dotnet_naming_symbols.constant_symbol.applicable_kinds = field
+dotnet_naming_symbols.constant_symbol.required_modifiers = const
+dotnet_naming_style.pascal.capitalization = pascal_case
+
+# --- correctness rules promoted to errors ---
+dotnet_diagnostic.CA2007.severity = none      # ConfigureAwait not required in ASP.NET Core
+dotnet_diagnostic.CA1848.severity = none      # LoggerMessage delegates — advisory, not enforced
+dotnet_diagnostic.CA1031.severity = none      # broad catch is deliberate at proxy boundaries
+dotnet_diagnostic.CA1812.severity = none      # DI-instantiated types look uninstantiated
+dotnet_diagnostic.CA1515.severity = none      # public types are the point of a library
+dotnet_diagnostic.CA1054.severity = none      # URI-as-string is the config surface
+dotnet_diagnostic.CA1056.severity = none
+dotnet_diagnostic.CA1062.severity = none      # nullable reference types cover this
+dotnet_diagnostic.CA2234.severity = none
+dotnet_diagnostic.IDE0058.severity = none     # unused expression value
+
+# NativeAOT / trimming — these must never regress
+dotnet_diagnostic.IL2026.severity = error
+dotnet_diagnostic.IL2091.severity = error
+dotnet_diagnostic.IL3050.severity = error
+
+[tests/**/*.cs]
+# Tests may use public members without docs and construct throwaway objects
+dotnet_diagnostic.CA1707.severity = none      # underscores in test method names
+dotnet_diagnostic.CA5394.severity = none      # non-crypto randomness in tests
+
+[bench/**/*.cs]
+dotnet_diagnostic.CA1707.severity = none

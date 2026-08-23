@@ -1,0 +1,73 @@
+<Project>
+
+  <!-- ============================================================
+       Gatehouse — repository-wide build settings.
+       Applied to every project unless a project overrides it.
+       ============================================================ -->
+
+  <!-- Target frameworks.
+
+       Libraries multi-target so a shop still on .NET 8 or 9 can reference
+       Gatehouse.Core and the provider/plugin contracts. Shipped applications
+       target .NET 10 only: it is the current LTS (supported to 2028-11-14),
+       whereas .NET 8 and 9 both reach end of life on 2026-11-10.
+
+       If a library ever needs an API that only exists on .NET 9+, drop net8.0
+       from that one project by overriding TargetFrameworks locally — do not
+       lower the bar for everything else. -->
+  <PropertyGroup>
+    <GatehouseLibraryTargetFrameworks>net8.0;net9.0;net10.0</GatehouseLibraryTargetFrameworks>
+    <GatehouseModernLibraryTargetFrameworks>net9.0;net10.0</GatehouseModernLibraryTargetFrameworks>
+    <GatehouseAppTargetFramework>net10.0</GatehouseAppTargetFramework>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <!-- Warnings are errors everywhere. A gateway that warns during build is a
+       gateway that surprises in production. -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsAsErrors />
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!-- Deterministic, reproducible builds. Required for the SLSA provenance and
+       SBOM story: a release artifact must be rebuildable bit-for-bit. -->
+  <PropertyGroup>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+
+  <!-- Package identity. The Gatehouse.* prefix is reserved for this project. -->
+  <PropertyGroup>
+    <Product>Gatehouse</Product>
+    <Company>The Gatehouse Project</Company>
+    <Authors>The Gatehouse Project</Authors>
+    <Copyright>Copyright (c) The Gatehouse Project and Contributors</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/zcsizmadia/Gatehouse</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/zcsizmadia/Gatehouse</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>ai;llm;gateway;proxy;openai;governance;finops;aspnetcore</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+  </PropertyGroup>
+
+  <!-- Versioning. Overridden by CI from the git tag on release builds. -->
+  <PropertyGroup>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionSuffix Condition="'$(VersionSuffix)' == '' AND '$(GITHUB_REF_TYPE)' != 'tag'">alpha</VersionSuffix>
+  </PropertyGroup>
+
+</Project>

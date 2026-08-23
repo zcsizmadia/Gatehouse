@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Gatehouse.Core/Gatehouse.Core.csproj" />
+    <Project Path="src/Gatehouse.Providers.OpenAI/Gatehouse.Providers.OpenAI.csproj" />
+    <Project Path="src/Gatehouse.Server/Gatehouse.Server.csproj" />
+    <Project Path="src/Gatehouse.Storage.Sqlite/Gatehouse.Storage.Sqlite.csproj" />
+  </Folder>
+</Solution>

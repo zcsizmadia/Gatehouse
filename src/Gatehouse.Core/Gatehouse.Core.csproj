@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>$(GatehouseLibraryTargetFrameworks)</TargetFrameworks>
+    <RootNamespace>Gatehouse</RootNamespace>
+    <IsPackable>true</IsPackable>
+    <PackageId>Gatehouse.Core</PackageId>
+    <Description>
+      Core abstractions for Gatehouse: the OpenAI-compatible wire contract, the
+      provider interface, model routing, and telemetry. Reference this package to
+      build a Gatehouse provider or to consume its types from your own host.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="System.Text.Json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Gatehouse.Core.Tests" />
+    <InternalsVisibleTo Include="Gatehouse.Server" />
+    <InternalsVisibleTo Include="Gatehouse.Server.Tests" />
+    <InternalsVisibleTo Include="Gatehouse.Benchmarks" />
+  </ItemGroup>
+
+</Project>
