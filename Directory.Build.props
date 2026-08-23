@@ -32,6 +32,14 @@
   <PropertyGroup>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarningsAsErrors />
+
+    <!-- NuGet audit stays on and an actual vulnerability (NU1901-NU1904) still fails the
+         build. NU1900 is different: it means the audit data could not be *fetched*. That is a
+         network condition, not a defect in the code, and treating it as an error makes every
+         build depend on nuget.org being reachable — which turns a transient outage, or a
+         corporate TLS-inspecting proxy, into a broken build with a misleading message. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1900</WarningsNotAsErrors>
+
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>

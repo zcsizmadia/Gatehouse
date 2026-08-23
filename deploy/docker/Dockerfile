@@ -28,7 +28,11 @@ WORKDIR /src
 # Restore before copying sources so a source-only change does not re-download the
 # package graph. Central Package Management means one file holds every version,
 # which makes this layer stable.
-COPY global.json Directory.Build.props Directory.Build.targets Directory.Packages.props NuGet.config ./
+# .editorconfig is not optional here. It carries the analyzer severity settings, and
+# TreatWarningsAsErrors is on repository-wide — without it the container build fails on
+# diagnostics that the local and CI builds correctly suppress, which is a confusing way to
+# discover that a file was missing from the build context.
+COPY global.json Directory.Build.props Directory.Build.targets Directory.Packages.props NuGet.config .editorconfig ./
 COPY src/Gatehouse.Core/Gatehouse.Core.csproj                             src/Gatehouse.Core/
 COPY src/Gatehouse.Providers.OpenAI/Gatehouse.Providers.OpenAI.csproj     src/Gatehouse.Providers.OpenAI/
 COPY src/Gatehouse.Storage.Sqlite/Gatehouse.Storage.Sqlite.csproj         src/Gatehouse.Storage.Sqlite/

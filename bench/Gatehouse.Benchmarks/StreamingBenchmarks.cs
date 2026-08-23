@@ -69,7 +69,10 @@ public class StreamingBenchmarks
         using var stream = new MemoryStream(_sseStream);
 
         int count = 0;
-        await foreach (ServerSentEvent sse in ServerSentEventReader.ReadAsync(stream))
+
+        // The event is discarded deliberately: this benchmark isolates the cost of framing
+        // and decoding, with deserialization measured separately by ReadAndDeserialiseChunks.
+        await foreach (ServerSentEvent _ in ServerSentEventReader.ReadAsync(stream))
         {
             count++;
         }

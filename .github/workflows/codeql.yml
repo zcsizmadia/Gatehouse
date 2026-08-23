@@ -56,7 +56,9 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-          queries: security-and-quality
+          # Query selection and the generated-code exclusions live in the config file so they
+          # apply identically to every language in the matrix.
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Build
         if: matrix.language == 'csharp'
