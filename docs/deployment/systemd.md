@@ -1,0 +1,143 @@
+# Deploying Gatehouse as a systemd unit
+
+Gatehouse ships as a single NativeAOT binary. There is no runtime to install, no
+virtualenv, and no wrapper process — the binary speaks the systemd notify protocol
+itself, so systemd knows when it is genuinely ready rather than merely running.
+
+## Install
+
+```bash
+# 1. The binary
+sudo install -m 0755 gatehouse-linux-x64 /usr/local/bin/gatehouse
+
+# 2. Configuration
+sudo mkdir -p /etc/gatehouse
+sudo install -m 0640 gatehouse.json /etc/gatehouse/gatehouse.json
+
+# 3. The unit
+sudo install -m 0644 gatehouse.service /etc/systemd/system/gatehouse.service
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now gatehouse
+```
+
+Verify:
+
+```bash
+systemctl status gatehouse
+curl -fsS http://127.0.0.1:8080/health/ready && echo
+journalctl -u gatehouse -f
+```
+
+## Credentials
+
+**Do not put API keys in `gatehouse.json`.** A key in a config file is a key in your
+configuration management, your backups, and often your git history. Gatehouse logs a
+warning at startup if it finds one.
+
+Use an environment file that only root can read. The unit already references it:
+
+```bash
+sudo install -m 0600 -o root -g root /dev/null /etc/gatehouse/gatehouse.env
+sudo tee /etc/gatehouse/gatehouse.env >/dev/null <<'EOF'
+OPENAI_API_KEY=sk-...
+EOF
+sudo systemctl restart gatehouse
+```
+
+And reference it from the config:
+
+```json
+"Providers": {
+  "openai": {
+    "Kind": "openai-compatible",
+    "BaseUrl": "https://api.openai.com/v1",
+    "ApiKeyEnvironmentVariable": "OPENAI_API_KEY"
+  }
+}
+```
+
+On Azure, prefer managed identity — it needs no stored credential at all. That
+lands with the Azure OpenAI provider in Phase 1.
+
+## What the unit does for you
+
+The shipped [`gatehouse.service`](../../deploy/systemd/gatehouse.service) is
+hardened by default. The parts worth understanding:
+
+**`Type=notify`.** Gatehouse tells systemd when it has validated its configuration
+and opened its listener. A dependent unit ordered `After=gatehouse.service` can
+therefore rely on it. With `Type=simple` you would get a unit that is "active" while
+still rejecting requests.
+
+**`DynamicUser=yes`.** A transient, unprivileged user with no shell, no home and no
+login. `StateDirectory=gatehouse` gives it `/var/lib/gatehouse` at mode 0700, owned
+by that transient identity — which is where the SQLite request log lives.
+
+**Sandboxing.** `ProtectSystem=strict`, `MemoryDenyWriteExecute`, an empty
+`CapabilityBoundingSet`, and `RestrictAddressFamilies=AF_INET AF_INET6`. A process
+that holds provider credentials and sits in the request path is worth constraining
+to exactly what it needs, and Gatehouse needs remarkably little: two socket families
+and one writable directory.
+
+**`LimitNOFILE=65535`.** A gateway holds one upstream connection per in-flight
+stream. The default of 1024 is reached earlier than people expect under concurrent
+streaming.
+
+Check the sandbox with:
+
+```bash
+systemd-analyze security gatehouse.service
+```
+
+## Listening address
+
+The unit binds `127.0.0.1:8080` deliberately. Terminate TLS in front of the gateway
+— nginx, HAProxy, Envoy — rather than exposing it directly.
+
+If you do terminate at nginx, `proxy_buffering off;` is required on the location
+that proxies Gatehouse. nginx buffers proxied responses by default, which collects
+each streamed completion and delivers it in one burst: the gateway streams
+correctly, the user sees nothing for twenty seconds, and every test still passes.
+Gatehouse sends `X-Accel-Buffering: no` to switch it off, which nginx honours, but
+setting it explicitly costs nothing and survives a config refactor.
+
+To bind elsewhere, override rather than editing the shipped unit:
+
+```bash
+sudo systemctl edit gatehouse
+```
+
+```ini
+[Service]
+Environment=ASPNETCORE_URLS=http://10.0.0.5:8080
+```
+
+## Upgrading
+
+```bash
+sudo systemctl stop gatehouse
+sudo install -m 0755 gatehouse-linux-x64 /usr/local/bin/gatehouse
+sudo systemctl start gatehouse
+```
+
+Schema migrations run at startup, inside `StartAsync`, before the unit reports
+ready. An unwritable or unmigratable database therefore fails the restart instead
+of producing a gateway that serves traffic without recording it. In a
+least-privilege or air-gapped deployment, set `Store.AutoMigrate` to `false` and
+apply migrations out of band.
+
+Stopping is graceful: in-flight streams are allowed to finish and queued request-log
+records are flushed before the process exits.
+
+## Uninstall
+
+```bash
+sudo systemctl disable --now gatehouse
+sudo rm /etc/systemd/system/gatehouse.service
+sudo systemctl daemon-reload
+sudo rm /usr/local/bin/gatehouse
+```
+
+`/var/lib/gatehouse` is left alone on purpose: it holds usage and audit history.
+Remove it deliberately, not as a side effect.

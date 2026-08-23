@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(GatehouseAppTargetFramework)</TargetFramework>
+    <RootNamespace>Gatehouse.Benchmarks</RootNamespace>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+
+    <!-- BenchmarkDotNet spawns a generated project per benchmark and needs to read the
+         attributes off this assembly to do it. -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Gatehouse.Core\Gatehouse.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+
+</Project>

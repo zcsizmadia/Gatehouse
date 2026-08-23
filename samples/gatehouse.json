@@ -1,0 +1,79 @@
+{
+  "//": [
+    "A minimal Gatehouse configuration, annotated. Pass it with:",
+    "    gatehouse --config ./samples/gatehouse.json",
+    "",
+    "Every setting here can also come from an environment variable using the",
+    "Gatehouse__Section__Key form, for example:",
+    "    Gatehouse__Store__ConnectionString='Data Source=/var/lib/gatehouse/gatehouse.db'",
+    "",
+    "Keys beginning with // are comments. JSON has none, and .NET configuration",
+    "ignores unrecognised keys, so this is the least surprising convention available."
+  ],
+
+  "Gatehouse": {
+    "Store": {
+      "//": "SQLite is the default and needs no external database. WAL mode is enabled automatically.",
+      "ConnectionString": "Data Source=gatehouse.db",
+      "AutoMigrate": true
+    },
+
+    "Telemetry": {
+      "ServiceName": "gatehouse",
+      "//OtlpEndpoint": "http://localhost:4317"
+    },
+
+    "Providers": {
+      "openai": {
+        "Kind": "openai-compatible",
+        "BaseUrl": "https://api.openai.com/v1",
+
+        "//": [
+          "Prefer ApiKeyEnvironmentVariable over a literal ApiKey. A key written into a",
+          "config file ends up in git history, in container images, and in every backup",
+          "of both. Gatehouse logs a warning at startup if you use the literal form."
+        ],
+        "ApiKeyEnvironmentVariable": "OPENAI_API_KEY",
+        "TimeoutSeconds": 100
+      },
+
+      "ollama": {
+        "//": "Local models need no credential at all.",
+        "Kind": "openai-compatible",
+        "BaseUrl": "http://localhost:11434/v1",
+        "TimeoutSeconds": 300
+      }
+    },
+
+    "Models": {
+      "//": [
+        "The key is what callers put in the 'model' field. Keeping it separate from the",
+        "upstream name is what lets you move traffic between providers without any",
+        "application redeploying."
+      ],
+
+      "gpt-4o-mini": {
+        "//": "Alias and upstream model match, so UpstreamModel can be omitted.",
+        "Provider": "openai"
+      },
+
+      "fast": {
+        "//": "A capability name. Repoint this at a different model or provider at will.",
+        "Provider": "openai",
+        "UpstreamModel": "gpt-4o-mini"
+      },
+
+      "local": {
+        "Provider": "ollama",
+        "UpstreamModel": "llama3.2"
+      }
+    }
+  },
+
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  }
+}

@@ -1,0 +1,89 @@
+[Unit]
+Description=Gatehouse — the open AI control plane for the enterprise
+Documentation=https://github.com/zcsizmadia/Gatehouse
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Type=notify, not simple. The binary references Microsoft.Extensions.Hosting.Systemd,
+# so it tells systemd when it is genuinely ready rather than when the process
+# exists. That distinction is what makes a dependent unit safe to order After= this
+# one, and it means a configuration error fails the start instead of producing a
+# unit that is "active" and rejecting every request.
+Type=notify
+NotifyAccess=main
+
+ExecStart=/usr/local/bin/gatehouse --config /etc/gatehouse/gatehouse.json
+Restart=on-failure
+RestartSec=5s
+
+# --- identity -----------------------------------------------------------------
+# Gatehouse holds provider credentials. It never needs root, and DynamicUser gives
+# it a transient uid with no home, no shell and no login.
+DynamicUser=yes
+StateDirectory=gatehouse
+StateDirectoryMode=0700
+ConfigurationDirectory=gatehouse
+WorkingDirectory=/var/lib/gatehouse
+
+# --- credentials --------------------------------------------------------------
+# Provider API keys belong here, not in the config file. systemd reads the file as
+# root and exposes it to the service alone, so an unprivileged process on the same
+# host cannot read it:
+#
+#   Environment=Gatehouse__Providers__openai__ApiKeyEnvironmentVariable=OPENAI_API_KEY
+#   EnvironmentFile=/etc/gatehouse/gatehouse.env   # chmod 600, root-owned
+#
+# Better still, on Azure use managed identity and store no credential at all.
+EnvironmentFile=-/etc/gatehouse/gatehouse.env
+
+Environment=Gatehouse__Store__ConnectionString=Data Source=/var/lib/gatehouse/gatehouse.db
+Environment=ASPNETCORE_URLS=http://127.0.0.1:8080
+Environment=DOTNET_gcServer=1
+
+# --- sandboxing ---------------------------------------------------------------
+# A gateway in the request path with credentials in memory is worth hardening.
+# Each of these is a capability Gatehouse genuinely does not need.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateUsers=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+
+# Outbound HTTPS to providers and inbound HTTP from applications. Nothing else:
+# no raw sockets, no unix-domain listeners, no AF_NETLINK.
+RestrictAddressFamilies=AF_INET AF_INET6
+
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @obsolete
+
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# --- limits -------------------------------------------------------------------
+# A gateway holds one upstream connection per in-flight stream plus its listeners.
+# The default of 1024 is reached surprisingly early under concurrent streaming.
+LimitNOFILE=65535
+
+# --- observability ------------------------------------------------------------
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gatehouse
+
+[Install]
+WantedBy=multi-user.target

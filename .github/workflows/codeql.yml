@@ -1,0 +1,71 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, so a newly published query catches an old commit. A gateway that
+    # holds provider credentials is worth re-scanning even when nothing changed.
+    - cron: '17 5 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: csharp
+            build-mode: manual
+          # The smoke test and stub upstream are executable parts of the release
+          # gate, so they are scanned rather than treated as inert scaffolding.
+          - language: python
+            build-mode: none
+          - language: actions
+            build-mode: none
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        if: matrix.language == 'csharp'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-and-quality
+
+      - name: Build
+        if: matrix.language == 'csharp'
+        # Manual build mode: autobuild would pick its own configuration, and the
+        # analyzers and source generators that make this codebase AOT-safe only run
+        # in the configuration the project actually ships.
+        run: dotnet build Gatehouse.slnx --configuration Release
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}

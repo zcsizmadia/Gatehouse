@@ -1,0 +1,51 @@
+version: 2
+
+updates:
+  # NuGet. Central Package Management means every bump touches exactly one file,
+  # Directory.Packages.props, which is what makes these reviewable as a group and
+  # keeps the SBOM diff meaningful.
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels: [dependencies, nuget]
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      # These version in lockstep upstream. Splitting them produces pull requests
+      # that cannot pass CI on their own because the framework references disagree.
+      microsoft-extensions:
+        patterns:
+          - "Microsoft.Extensions.*"
+          - "System.Text.Json"
+      aspnetcore:
+        patterns:
+          - "Microsoft.AspNetCore.*"
+      opentelemetry:
+        patterns:
+          - "OpenTelemetry*"
+      testing:
+        patterns:
+          - "TUnit*"
+          - "NSubstitute"
+          - "BenchmarkDotNet"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, github-actions]
+    commit-message:
+      prefix: "ci(deps)"
+
+  - package-ecosystem: docker
+    directory: /deploy/docker
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, docker]
+    commit-message:
+      prefix: "build(deps)"

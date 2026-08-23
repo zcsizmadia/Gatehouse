@@ -55,7 +55,7 @@ production. See the [roadmap](./ROADMAP.md) for what lands when, and
 
 ```bash
 # Run the gateway with the sample configuration
-dotnet run --project src/Gatehouse.Server -- --config ./samples/gatehouse.yaml
+dotnet run --project src/Gatehouse.Server -- --config ./samples/gatehouse.json
 ```
 
 Then point any OpenAI client at it:

@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/bench/">
+    <Project Path="bench/Gatehouse.Benchmarks/Gatehouse.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Gatehouse.Core/Gatehouse.Core.csproj" />
     <Project Path="src/Gatehouse.Providers.OpenAI/Gatehouse.Providers.OpenAI.csproj" />

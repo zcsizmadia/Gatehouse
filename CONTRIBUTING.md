@@ -48,7 +48,7 @@ than in the source.
 Run the gateway locally:
 
 ```bash
-dotnet run --project src/Gatehouse.Server -- --config ./samples/gatehouse.yaml
+dotnet run --project src/Gatehouse.Server -- --config ./samples/gatehouse.json
 ```
 
 ## Testing

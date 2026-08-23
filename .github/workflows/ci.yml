@@ -1,0 +1,265 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege by default. Jobs that need more ask for it explicitly.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  TESTINGPLATFORM_TELEMETRY_OPTOUT: 1
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build and test on both platforms Gatehouse claims to support, against every
+  # target framework the libraries claim to support. Multi-targeting that nothing
+  # exercises is a promise rather than a guarantee.
+  # ---------------------------------------------------------------------------
+  build-test:
+    name: Build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          # The libraries target net8.0 and net9.0 as well, so those runtimes and
+          # targeting packs have to be present or the build cannot resolve them.
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Restore
+        run: dotnet restore Gatehouse.slnx
+
+      - name: Build
+        # TreatWarningsAsErrors is on repository-wide, so this step is also the
+        # analyzer, style and AOT-compatibility gate.
+        run: dotnet build Gatehouse.slnx --configuration Release --no-restore
+
+      - name: Test — Gatehouse.Core.Tests
+        shell: bash
+        run: |
+          for tfm in net8.0 net9.0 net10.0; do
+            echo "::group::Gatehouse.Core.Tests ($tfm)"
+            dotnet run --project tests/Gatehouse.Core.Tests \
+              --configuration Release --framework "$tfm" --no-build \
+              -- --report-trx --report-trx-filename "core-$tfm.trx"
+            echo "::endgroup::"
+          done
+
+      - name: Test — Gatehouse.Server.Tests
+        shell: bash
+        # The integration suite hosts a real Kestrel on both sides of the gateway,
+        # so it runs only on the application target framework.
+        run: |
+          dotnet run --project tests/Gatehouse.Server.Tests \
+            --configuration Release --framework net10.0 --no-build \
+            -- --report-trx --report-trx-filename "server.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: '**/TestResults/*.trx'
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # The Phase 0 gate: one NativeAOT binary that actually starts and serves.
+  # Publishing without running the result proves only that the linker exited zero,
+  # and AOT failures characteristically appear at first use rather than at link.
+  # ---------------------------------------------------------------------------
+  aot-smoke:
+    name: NativeAOT smoke (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+            exe: gatehouse
+          - os: windows-latest
+            rid: win-x64
+            exe: gatehouse.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install NativeAOT prerequisites
+        if: runner.os == 'Linux'
+        # AOT links with clang and needs the zlib headers. Without them the build
+        # fails late, in the linker, with a message that does not mention either.
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends clang zlib1g-dev
+
+      - name: Publish NativeAOT
+        run: >
+          dotnet publish src/Gatehouse.Server
+          --configuration Release
+          --runtime ${{ matrix.rid }}
+          --self-contained true
+          -p:PublishAot=true
+          --output ${{ github.workspace }}/publish
+
+      - name: Report binary size
+        shell: bash
+        # A single binary is a headline claim, so its size is reported on every run
+        # rather than measured once and quoted forever.
+        run: |
+          ls -lh "${{ github.workspace }}/publish/${{ matrix.exe }}"
+          echo "### NativeAOT binary (${{ matrix.rid }})" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          ls -lh "${{ github.workspace }}/publish/${{ matrix.exe }}" | awk '{print $5, $9}' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test — version
+        shell: bash
+        # A block scalar, so the quoting belongs to the shell rather than to YAML.
+        run: |
+          "${{ github.workspace }}/publish/${{ matrix.exe }}" --version
+
+      - name: Smoke test — serve a streamed completion
+        shell: bash
+        # The whole gate in one script: start the published binary, have it proxy a
+        # streamed completion from a stub upstream, and assert the chunks arrive.
+        run: bash ./.github/scripts/smoke-test.sh "${{ github.workspace }}/publish/${{ matrix.exe }}"
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: gatehouse-${{ matrix.rid }}
+          path: ${{ github.workspace }}/publish/${{ matrix.exe }}
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Container image. Built on every pull request so packaging breaks are caught
+  # with the change that caused them rather than at release time.
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Container image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          push: false
+          load: true
+          tags: gatehouse:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify the image runs and reports ready
+        run: |
+          docker run --rm --detach --name gatehouse-ci \
+            --publish 18080:8080 \
+            --env Gatehouse__Providers__stub__Kind=openai-compatible \
+            --env Gatehouse__Providers__stub__BaseUrl=http://127.0.0.1:9/v1 \
+            --env Gatehouse__Models__probe__Provider=stub \
+            gatehouse:ci
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18080/health/ready; then
+              echo "gatehouse reported ready"
+              docker rm --force gatehouse-ci
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "gatehouse did not become ready" >&2
+          docker logs gatehouse-ci >&2 || true
+          docker rm --force gatehouse-ci
+          exit 1
+
+  # ---------------------------------------------------------------------------
+  # Supply chain. In place from the first commit rather than added before v1.0,
+  # because that is the claim SECURITY.md makes.
+  # ---------------------------------------------------------------------------
+  sbom:
+    name: SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Install CycloneDX
+        run: dotnet tool install --global CycloneDX
+
+      - name: Generate SBOM
+        # One SBOM per shipped artifact. Central Package Management means the
+        # dependency graph is declared in a single file, so a reviewer can diff the
+        # SBOM against Directory.Packages.props and see that they agree.
+        run: |
+          dotnet CycloneDX src/Gatehouse.Server/Gatehouse.Server.csproj \
+            --output ./sbom \
+            --output-format Json \
+            --set-name Gatehouse \
+            --set-version "0.1.0-alpha"
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: ./sbom
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # A single required check to protect the branch with, so the ruleset does not
+  # have to be edited every time the matrix changes.
+  # ---------------------------------------------------------------------------
+  ci-complete:
+    name: CI complete
+    if: always()
+    needs: [build-test, aot-smoke, docker, sbom]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any job did not succeed
+        # needs.*.result is checked explicitly: a skipped or cancelled dependency
+        # must not be able to report the whole run as green.
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          echo "Dependency results: $results"
+          for result in $results; do
+            if [ "$result" != "success" ]; then
+              echo "::error::A required job reported '$result'."
+              exit 1
+            fi
+          done
+          echo "All required jobs succeeded."

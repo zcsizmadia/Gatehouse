@@ -1,0 +1,168 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build, without the leading v
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # One NativeAOT binary per platform, each signed and attested. SECURITY.md
+  # promises signed releases, an SBOM per artifact and SLSA provenance from the
+  # first commit rather than before v1.0, so this workflow exists now even though
+  # nothing has been released yet.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  rid: linux-x64,   exe: gatehouse }
+          - { os: ubuntu-24.04-arm, rid: linux-arm64, exe: gatehouse }
+          - { os: windows-latest, rid: win-x64,     exe: gatehouse.exe }
+          - { os: macos-latest,   rid: osx-arm64,   exe: gatehouse }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install NativeAOT prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends clang zlib1g-dev
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building version $version"
+
+      - name: Publish
+        shell: bash
+        # VersionSuffix is cleared explicitly. Directory.Build.props defaults it to
+        # "alpha" for untagged builds, and a release artifact labelled alpha is the
+        # kind of mistake nobody notices until a customer asks about it.
+        run: >
+          dotnet publish src/Gatehouse.Server
+          --configuration Release
+          --runtime ${{ matrix.rid }}
+          --self-contained true
+          -p:PublishAot=true
+          -p:VersionPrefix=${{ steps.version.outputs.version }}
+          -p:VersionSuffix=
+          --output ./publish
+
+      - name: Verify the binary runs
+        shell: bash
+        run: ./publish/${{ matrix.exe }} --version
+
+      - name: Smoke test
+        shell: bash
+        run: bash ./.github/scripts/smoke-test.sh "./publish/${{ matrix.exe }}"
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          mkdir -p staging
+          cp "./publish/${{ matrix.exe }}" "staging/gatehouse-${{ matrix.rid }}${{ runner.os == 'Windows' && '.exe' || '' }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.rid }}
+          path: staging/*
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Sign, attest and publish. Kept separate from the build so that the signing
+  # identity is bound to one auditable job rather than to four.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Sign and publish
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # Keyless Sigstore signing and build attestations both use the workflow
+      # OIDC identity, which is what binds an artifact to this repository and this
+      # workflow rather than to a key somebody has to keep secret.
+      id-token: write
+      attestations: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: ./release
+
+      - name: Generate SBOM
+        run: |
+          dotnet tool install --global CycloneDX
+          dotnet CycloneDX src/Gatehouse.Server/Gatehouse.Server.csproj \
+            --output ./release \
+            --output-format Json \
+            --set-name Gatehouse \
+            --set-version "${GITHUB_REF_NAME#v}"
+
+      - name: Checksums
+        working-directory: ./release
+        run: sha256sum * > SHA256SUMS
+
+      - name: Sign artifacts with Sigstore
+        uses: sigstore/gh-action-sigstore-python@v3
+        with:
+          inputs: ./release/gatehouse-*
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ./release/gatehouse-*
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./release/*
+          generate_release_notes: true
+          # Pre-release until v1.0. The API-stability guarantee arrives with 1.0,
+          # and marking these as stable would misrepresent that.
+          prerelease: ${{ !startsWith(github.ref_name, 'v1.') }}
+          body: |
+            See [CHANGELOG.md](https://github.com/zcsizmadia/Gatehouse/blob/main/CHANGELOG.md).
+
+            **Verifying this release** — instructions are in
+            [SECURITY.md](https://github.com/zcsizmadia/Gatehouse/blob/main/SECURITY.md#verifying-a-release).
+            Every binary ships with a Sigstore bundle, a CycloneDX SBOM and SLSA
+            build provenance. If verification fails, treat the artifact as
+            compromised and tell us.
