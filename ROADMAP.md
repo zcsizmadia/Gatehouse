@@ -31,10 +31,15 @@ Service, a systemd unit, and a Docker container — same build, three hosts.
 
 The smallest thing a .NET shop can actually deploy.
 
-- OpenAI-compatible endpoint with SSE streaming
+- [x] OpenAI-compatible endpoint with SSE streaming
 - **Exactly seven providers.** Azure OpenAI (Entra managed identity), OpenAI,
   Anthropic, Amazon Bedrock, Google Gemini, Ollama/vLLM, Foundry Local
-- Virtual keys, fallback chains, circuit breakers
+  - [x] OpenAI, Ollama/vLLM, Foundry Local — one `openai-compatible` provider
+  - [x] Azure OpenAI, with Entra managed identity
+  - [x] Anthropic
+  - [x] Google Gemini
+  - [ ] Amazon Bedrock — deferred to its own pull request; see ADR 0002
+- [ ] Virtual keys, fallback chains, circuit breakers
 - Token metering that **reconciles against provider invoices** — LiteLLM's
   most-cited bug, and the one finance teams notice
 - Exact-match caching only

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>$(GatehouseLibraryTargetFrameworks)</TargetFrameworks>
+    <RootNamespace>Gatehouse.Providers.Google</RootNamespace>
+    <IsPackable>true</IsPackable>
+    <PackageId>Gatehouse.Providers.Google</PackageId>
+    <Description>
+      Google Gemini provider for Gatehouse. Hand-written because Google publishes no official
+      .NET SDK for the Gemini Developer API, and its Vertex AI package is neither applicable
+      nor NativeAOT-compatible.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Gatehouse.Core\Gatehouse.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Gatehouse.Providers.Tests" />
+    <InternalsVisibleTo Include="Gatehouse.Server.Tests" />
+  </ItemGroup>
+
+</Project>

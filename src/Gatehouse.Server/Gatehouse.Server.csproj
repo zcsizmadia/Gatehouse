@@ -28,6 +28,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Gatehouse.Core\Gatehouse.Core.csproj" />
+    <ProjectReference Include="..\Gatehouse.Providers.Anthropic\Gatehouse.Providers.Anthropic.csproj" />
+    <ProjectReference Include="..\Gatehouse.Providers.AzureOpenAI\Gatehouse.Providers.AzureOpenAI.csproj" />
+    <ProjectReference Include="..\Gatehouse.Providers.Google\Gatehouse.Providers.Google.csproj" />
     <ProjectReference Include="..\Gatehouse.Providers.OpenAI\Gatehouse.Providers.OpenAI.csproj" />
     <ProjectReference Include="..\Gatehouse.Storage.Sqlite\Gatehouse.Storage.Sqlite.csproj" />
   </ItemGroup>

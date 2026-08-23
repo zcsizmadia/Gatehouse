@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>$(GatehouseLibraryTargetFrameworks)</TargetFrameworks>
+    <RootNamespace>Gatehouse.Providers.AzureOpenAI</RootNamespace>
+    <IsPackable>true</IsPackable>
+    <PackageId>Gatehouse.Providers.AzureOpenAI</PackageId>
+    <Description>
+      Azure OpenAI support for Gatehouse: deployment-based addressing and Microsoft Entra
+      managed-identity authentication. A separate package so that shops not using Azure do not
+      take a dependency on Azure.Identity.
+    </Description>
+  </PropertyGroup>
+
+  <!-- Deliberately NOT Azure.AI.OpenAI. The Azure OpenAI REST API is OpenAI-compatible, so the
+       existing provider serves it; Azure.AI.OpenAI is the one Azure package with no trimming
+       annotations and would break the NativeAOT gate for no benefit. Azure.Identity is
+       trim-annotated and is the only piece genuinely worth taking. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Gatehouse.Core\Gatehouse.Core.csproj" />
+    <ProjectReference Include="..\Gatehouse.Providers.OpenAI\Gatehouse.Providers.OpenAI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Gatehouse.Providers.Tests" />
+    <InternalsVisibleTo Include="Gatehouse.Server.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -55,15 +55,20 @@ jobs:
         # analyzer, style and AOT-compatibility gate.
         run: dotnet build Gatehouse.slnx --configuration Release --no-restore
 
-      - name: Test — Gatehouse.Core.Tests
+      - name: Test — multi-targeted suites
         shell: bash
+        # Core and the provider translation tests run against every framework the libraries
+        # claim to support. Multi-targeting that nothing exercises is a promise, not a
+        # guarantee.
         run: |
-          for tfm in net8.0 net9.0 net10.0; do
-            echo "::group::Gatehouse.Core.Tests ($tfm)"
-            dotnet run --project tests/Gatehouse.Core.Tests \
-              --configuration Release --framework "$tfm" --no-build \
-              -- --report-trx --report-trx-filename "core-$tfm.trx"
-            echo "::endgroup::"
+          for project in Gatehouse.Core.Tests Gatehouse.Providers.Tests; do
+            for tfm in net8.0 net9.0 net10.0; do
+              echo "::group::$project ($tfm)"
+              dotnet run --project "tests/$project" \
+                --configuration Release --framework "$tfm" --no-build \
+                -- --report-trx --report-trx-filename "$project-$tfm.trx"
+              echo "::endgroup::"
+            done
           done
 
       - name: Test — Gatehouse.Server.Tests
