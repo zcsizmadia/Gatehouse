@@ -52,28 +52,36 @@ public class ChatCompletionsEndpointTests
         // is immune to client scheduling and still catches a provider or SSE-writer that
         // accumulates before writing.
         await using FakeUpstream upstream = await FakeUpstream.StartAsync();
-        upstream.Chunks = ["one", "two", "three"];
+        upstream.Chunks = ["one", "two", "three", "four"];
         upstream.ChunkDelay = TimeSpan.FromMilliseconds(200);
 
         await using GatehouseHost gateway = await GatehouseHost.StartAsync(upstream.BaseAddress);
 
         StreamedCompletion result = await ReadStreamAsync(gateway, "gpt-4o-mini");
-        await Assert.That(result.Text).IsEqualTo("onetwothree");
+        await Assert.That(result.Text).IsEqualTo("onetwothreefour");
 
         RequestRecord record = await WaitForRecordAsync(gateway);
         await Assert.That(record.TimeToFirstChunk).IsNotNull();
 
-        // The upstream sleeps 200 ms before each of three chunks, so it finishes at ~600 ms and
-        // emits its first at ~200 ms. A gateway that buffered would not flush anything until
-        // the upstream completed, putting time-to-first-chunk level with the total duration.
-        // Half is a wide margin that still fails decisively on that.
-        TimeSpan firstChunk = record.TimeToFirstChunk!.Value;
-        await Assert.That(firstChunk).IsLessThan(record.Duration * 0.5);
+        // How much of the request happened *after* the first chunk was flushed.
+        //
+        // Expressed as an interval rather than a ratio of the total, because the total includes
+        // fixed overhead — routing, the upstream connection — that varies hugely with machine
+        // load. A ratio test failed on a Windows runner at 475 ms / 907 ms: both numbers were
+        // inflated by ~275 ms of setup, which pushed the ratio past a half even though the
+        // stream was working perfectly. Subtracting cancels that overhead entirely.
+        //
+        // Four chunks at 200 ms means roughly 600 ms should elapse after the first one. A
+        // gateway that buffered would flush nothing until the upstream finished, leaving this
+        // interval at approximately zero — so the two cases are separated by the whole
+        // measurement, not by a threshold that has to be tuned.
+        TimeSpan afterFirstChunk = record.Duration - record.TimeToFirstChunk!.Value;
+        await Assert.That(afterFirstChunk).IsGreaterThan(TimeSpan.FromMilliseconds(300));
 
         // Each chunk must also be its own SSE frame. One frame containing everything would mean
         // the relay concatenated the stream before writing it, which the timing check above
         // would not notice.
-        await Assert.That(result.ChunkOffsets.Count).IsGreaterThanOrEqualTo(3);
+        await Assert.That(result.ChunkOffsets.Count).IsGreaterThanOrEqualTo(4);
     }
 
     [Test]
