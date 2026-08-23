@@ -1,10 +1,17 @@
-# Gatehouse
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./assets/logo-dark.svg">
+    <img src="./assets/logo.svg" alt="Gatehouse" width="316" height="64">
+  </picture>
+</p>
 
-**The open AI control plane for the enterprise.**
+<p align="center"><strong>The open AI control plane for the enterprise.</strong></p>
 
-[![CI](https://github.com/zcsizmadia/Gatehouse/actions/workflows/ci.yml/badge.svg)](https://github.com/zcsizmadia/Gatehouse/actions/workflows/ci.yml)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/zcsizmadia/Gatehouse/badge)](https://securityscorecards.dev/viewer/?uri=github.com/zcsizmadia/Gatehouse)
+<p align="center">
+  <a href="https://github.com/zcsizmadia/Gatehouse/actions/workflows/ci.yml"><img src="https://github.com/zcsizmadia/Gatehouse/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache 2.0"></a>
+  <a href="https://securityscorecards.dev/viewer/?uri=github.com/zcsizmadia/Gatehouse"><img src="https://api.securityscorecards.dev/projects/github.com/zcsizmadia/Gatehouse/badge" alt="OpenSSF Scorecard"></a>
+</p>
 
 Gatehouse sits between your applications and your LLM providers. It routes the
 traffic, enforces who is allowed to spend what, and produces the audit trail and
