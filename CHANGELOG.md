@@ -12,7 +12,33 @@ guarantee takes effect at v1.0 — see the [roadmap](./ROADMAP.md).
 
 ### Added
 
-Phase 0 — Foundations.
+**Phase 1 — providers.**
+
+- Azure OpenAI, via the existing OpenAI-compatible provider plus deployment-in-path
+  addressing and Microsoft Entra managed-identity authentication. `Azure.AI.OpenAI` is
+  deliberately not a dependency; see [ADR 0002](./docs/adr/0002-provider-integration.md).
+- Anthropic Messages API provider, hand-written to preserve the cache-token fields that
+  invoice reconciliation depends on.
+- Google Gemini provider, hand-written because no official .NET SDK covers the Gemini
+  Developer API.
+- `MeteringConsistency`: an arithmetic backstop that downgrades token counts to *estimated*
+  and logs a discrepancy when a provider's reported usage stops adding up, rather than
+  letting it reach a chargeback export unnoticed.
+- `TokenUsage.CacheCreationTokens`, separating cache writes (billed at a premium) from cache
+  reads (billed at a discount).
+- [docs/providers/wire-formats.md](./docs/providers/wire-formats.md), recording each
+  provider's verified wire format and the metering traps in it.
+
+### Fixed
+
+- Three metering defects caught while reading provider documentation, before any of the code
+  shipped: Anthropic's streamed usage is cumulative rather than incremental (summing it
+  over-bills every streamed request); Anthropic's `input_tokens` excludes cached tokens,
+  which are additive (mapping it straight through under-reports a cache-heavy prompt by most
+  of its size); and Gemini bills thinking tokens as output while reporting them outside
+  `candidatesTokenCount`.
+
+### Phase 0 — Foundations
 
 - Project governance: [GOVERNANCE.md](./GOVERNANCE.md) with the permanent
   no-paywall commitment, a public [ROADMAP.md](./ROADMAP.md),

@@ -88,6 +88,37 @@ public sealed class ProviderOptions
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// The API version to request. Azure OpenAI only; ignored by other providers.
+    /// </summary>
+    /// <remarks>
+    /// Left unset, the Azure provider pins a known version rather than tracking the newest.
+    /// Azure API versions change response shapes, and a gateway that silently follows the
+    /// latest turns an Azure-side rollout into an unexplained Gatehouse regression.
+    /// </remarks>
+    public string? ApiVersion { get; set; }
+
+    /// <summary>
+    /// Authenticate to Azure with a Microsoft Entra managed identity instead of an API key.
+    /// </summary>
+    /// <remarks>
+    /// The recommended setting for anything running in Azure, and the only option here that
+    /// stores no credential at all — there is no key to rotate, leak, or find in a backup.
+    /// When this is set, <see cref="ApiKey"/> and <see cref="ApiKeyEnvironmentVariable"/> are
+    /// ignored.
+    /// </remarks>
+    public bool UseManagedIdentity { get; set; }
+
+    /// <summary>
+    /// The client ID of a user-assigned managed identity, when the host has more than one.
+    /// </summary>
+    /// <remarks>
+    /// Leave unset for a system-assigned identity. On a host with several user-assigned
+    /// identities, omitting it produces an authentication failure whose message does not
+    /// mention that the identity was ambiguous.
+    /// </remarks>
+    public string? ManagedIdentityClientId { get; set; }
+
+    /// <summary>
     /// Whether to expose this provider's native API verbatim under
     /// <c>/passthrough/{provider}/</c>.
     /// </summary>

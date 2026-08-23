@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Provider translation is pure logic, so it is tested against every framework the
+         provider libraries claim to support. -->
+    <TargetFrameworks>$(GatehouseLibraryTargetFrameworks)</TargetFrameworks>
+    <RootNamespace>Gatehouse.Providers.Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <!-- One project for every provider's translation tests rather than one project each.
+       Provider count is capped at seven, and seven test projects would multiply CI time
+       without separating anything that needs separating. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Gatehouse.Core\Gatehouse.Core.csproj" />
+    <ProjectReference Include="..\..\src\Gatehouse.Providers.Anthropic\Gatehouse.Providers.Anthropic.csproj" />
+    <ProjectReference Include="..\..\src\Gatehouse.Providers.Google\Gatehouse.Providers.Google.csproj" />
+    <ProjectReference Include="..\..\src\Gatehouse.Providers.OpenAI\Gatehouse.Providers.OpenAI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+  </ItemGroup>
+
+</Project>

@@ -40,10 +40,16 @@ internal sealed class GatehouseHost : IAsyncDisposable
     /// <param name="upstreamBaseUrl">The fake upstream address.</param>
     /// <param name="apiKey">The credential the gateway should present upstream.</param>
     /// <param name="allowPassthrough">Whether to enable the YARP passthrough route.</param>
+    /// <param name="kind">
+    /// The provider kind to configure — <c>openai-compatible</c>, <c>anthropic</c>,
+    /// <c>google-gemini</c> or <c>azure-openai</c>. The model aliases stay the same across all
+    /// of them so the same tests can be pointed at any provider.
+    /// </param>
     public static async Task<GatehouseHost> StartAsync(
         string upstreamBaseUrl,
         string apiKey = "test-upstream-key",
-        bool allowPassthrough = false)
+        bool allowPassthrough = false,
+        string kind = "openai-compatible")
     {
         string databasePath = Path.Combine(Path.GetTempPath(), $"gatehouse-it-{Guid.NewGuid():N}.db");
         string configPath = Path.Combine(Path.GetTempPath(), $"gatehouse-it-{Guid.NewGuid():N}.json");
@@ -63,7 +69,7 @@ internal sealed class GatehouseHost : IAsyncDisposable
                 {
                     ["fake"] = new
                     {
-                        Kind = "openai-compatible",
+                        Kind = kind,
                         BaseUrl = upstreamBaseUrl,
                         ApiKey = apiKey,
                         TimeoutSeconds = 30,

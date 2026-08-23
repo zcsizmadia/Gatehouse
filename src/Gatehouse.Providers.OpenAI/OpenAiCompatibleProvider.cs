@@ -30,8 +30,6 @@ public sealed class OpenAiCompatibleProvider : IChatProvider
     /// <summary>The <c>kind</c> value that selects this provider in configuration.</summary>
     public const string Kind = "openai-compatible";
 
-    private const string ChatCompletionsPath = "chat/completions";
-
     // Upstream error bodies are echoed to the caller to make debugging possible, but they
     // are attacker-influenced and unbounded. Truncating keeps a hostile or broken upstream
     // from turning every failure into a multi-megabyte log line.
@@ -40,6 +38,7 @@ public sealed class OpenAiCompatibleProvider : IChatProvider
     private readonly HttpClient _httpClient;
     private readonly ILogger<OpenAiCompatibleProvider> _logger;
     private readonly TimeSpan _timeout;
+    private readonly IUpstreamAddressing _addressing;
 
     /// <summary>Creates a provider bound to one configured upstream.</summary>
     /// <param name="name">The configuration key routes refer to this provider by.</param>
@@ -57,11 +56,17 @@ public sealed class OpenAiCompatibleProvider : IChatProvider
     /// failure looks like an upstream fault rather than our own configuration.
     /// </param>
     /// <param name="logger">The logger.</param>
+    /// <param name="addressing">
+    /// Where to send the request. Defaults to standard OpenAI addressing; Azure OpenAI passes
+    /// <see cref="AzureOpenAiAddressing"/> because it identifies the target by deployment name
+    /// in the path rather than by model in the body.
+    /// </param>
     public OpenAiCompatibleProvider(
         string name,
         HttpClient httpClient,
         TimeSpan timeout,
-        ILogger<OpenAiCompatibleProvider> logger)
+        ILogger<OpenAiCompatibleProvider> logger,
+        IUpstreamAddressing? addressing = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(httpClient);
@@ -72,6 +77,7 @@ public sealed class OpenAiCompatibleProvider : IChatProvider
         _httpClient = httpClient;
         _timeout = timeout;
         _logger = logger;
+        _addressing = addressing ?? OpenAiAddressing.Instance;
     }
 
     /// <inheritdoc />
@@ -234,7 +240,7 @@ public sealed class OpenAiCompatibleProvider : IChatProvider
         }
     }
 
-    private static HttpRequestMessage BuildRequest(ChatCompletionRequest request, ModelRoute route, bool stream)
+    private HttpRequestMessage BuildRequest(ChatCompletionRequest request, ModelRoute route, bool stream)
     {
         // The upstream is told the real model name, not the alias. Sending the alias is the
         // classic gateway bug: it works in every test where the two happen to match, and
@@ -255,7 +261,7 @@ public sealed class OpenAiCompatibleProvider : IChatProvider
             upstreamBody,
             GatehouseJsonContext.Default.ChatCompletionRequest);
 
-        var message = new HttpRequestMessage(HttpMethod.Post, ChatCompletionsPath)
+        var message = new HttpRequestMessage(HttpMethod.Post, _addressing.BuildChatCompletionsUri(route))
         {
             Content = new ByteArrayContent(json),
         };

@@ -43,10 +43,16 @@ WORKDIR /src
 # container build fails on diagnostics the local and CI builds deliberately suppress —
 # a confusing way to discover that a file was missing from the build context.
 COPY global.json Directory.Build.props Directory.Build.targets Directory.Packages.props NuGet.config .editorconfig ./
-COPY src/Gatehouse.Core/Gatehouse.Core.csproj                             src/Gatehouse.Core/
-COPY src/Gatehouse.Providers.OpenAI/Gatehouse.Providers.OpenAI.csproj     src/Gatehouse.Providers.OpenAI/
-COPY src/Gatehouse.Storage.Sqlite/Gatehouse.Storage.Sqlite.csproj         src/Gatehouse.Storage.Sqlite/
-COPY src/Gatehouse.Server/Gatehouse.Server.csproj                         src/Gatehouse.Server/
+# Every project file, listed individually so that the restore layer is cached against the
+# dependency graph rather than against the source. A new project must be added here or restore
+# fails inside the image while succeeding everywhere else.
+COPY src/Gatehouse.Core/Gatehouse.Core.csproj                                     src/Gatehouse.Core/
+COPY src/Gatehouse.Providers.Anthropic/Gatehouse.Providers.Anthropic.csproj       src/Gatehouse.Providers.Anthropic/
+COPY src/Gatehouse.Providers.AzureOpenAI/Gatehouse.Providers.AzureOpenAI.csproj   src/Gatehouse.Providers.AzureOpenAI/
+COPY src/Gatehouse.Providers.Google/Gatehouse.Providers.Google.csproj             src/Gatehouse.Providers.Google/
+COPY src/Gatehouse.Providers.OpenAI/Gatehouse.Providers.OpenAI.csproj             src/Gatehouse.Providers.OpenAI/
+COPY src/Gatehouse.Storage.Sqlite/Gatehouse.Storage.Sqlite.csproj                 src/Gatehouse.Storage.Sqlite/
+COPY src/Gatehouse.Server/Gatehouse.Server.csproj                                 src/Gatehouse.Server/
 
 ARG TARGETARCH
 RUN RID=$([ "$TARGETARCH" = "arm64" ] && echo linux-arm64 || echo linux-x64) \
