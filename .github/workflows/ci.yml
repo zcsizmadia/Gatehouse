@@ -202,6 +202,72 @@ jobs:
           exit 1
 
   # ---------------------------------------------------------------------------
+  # The libraries are a shipped deliverable, not a by-product: a .NET 8 shop is
+  # invited to reference Gatehouse.Core, and from Phase 3 the guardrails plugin
+  # contract. Packing on every pull request is what keeps that offer honest.
+  # ---------------------------------------------------------------------------
+  pack:
+    name: NuGet packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Pack
+        run: dotnet pack Gatehouse.slnx --configuration Release --output ./artifacts
+
+      - name: Verify every package carries all three target frameworks
+        shell: bash
+        # A packaging regression that quietly drops net8.0 would break consumers
+        # while every build and test in this workflow still passed.
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          packages=(./artifacts/*.nupkg)
+          if [ ${#packages[@]} -eq 0 ]; then
+            echo "::error::No packages were produced."
+            exit 1
+          fi
+
+          for pkg in "${packages[@]}"; do
+            case "$pkg" in *.symbols.nupkg) continue ;; esac
+            echo "::group::$(basename "$pkg")"
+            contents=$(unzip -Z1 "$pkg")
+            echo "$contents" | grep -E '^lib/|\.nuspec$' || true
+
+            for tfm in net8.0 net9.0 net10.0; do
+              if ! echo "$contents" | grep -q "^lib/$tfm/"; then
+                echo "::error::$(basename "$pkg") is missing lib/$tfm."
+                exit 1
+              fi
+            done
+
+            # Apache-2.0 with the explicit patent grant is what enterprise legal
+            # review asks about, so its presence is asserted rather than assumed.
+            if ! echo "$contents" | grep -q 'README.md'; then
+              echo "::error::$(basename "$pkg") does not embed the README."
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
+
+          echo "All packages carry net8.0, net9.0 and net10.0."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: ./artifacts/*
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
   # Supply chain. In place from the first commit rather than added before v1.0,
   # because that is the claim SECURITY.md makes.
   # ---------------------------------------------------------------------------
@@ -247,7 +313,7 @@ jobs:
   ci-complete:
     name: CI complete
     if: always()
-    needs: [build-test, aot-smoke, docker, sbom]
+    needs: [build-test, aot-smoke, docker, pack, sbom]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any job did not succeed

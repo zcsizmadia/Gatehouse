@@ -27,6 +27,9 @@ Phase 0 — Foundations.
 - OpenTelemetry tracing, metrics and logs following the GenAI semantic
   conventions.
 - Public benchmark harness in `bench/Gatehouse.Benchmarks`.
+- NuGet packages under the `Gatehouse.*` prefix — `Gatehouse.Core`,
+  `Gatehouse.Providers.OpenAI` and `Gatehouse.Storage.Sqlite` — each targeting
+  `net8.0`, `net9.0` and `net10.0`, with XML documentation and Source Link.
 - Supply chain from the first commit: deterministic builds, CycloneDX SBOM,
   Sigstore signing and SLSA provenance on release, CodeQL and OpenSSF Scorecard
   in CI.
