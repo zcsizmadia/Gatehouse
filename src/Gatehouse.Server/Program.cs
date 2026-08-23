@@ -37,6 +37,15 @@ public static class Program
             return 0;
         }
 
+        // Subcommands are handled before any host is built. `keys create` has to work on a
+        // deployment that cannot start yet, because requiring authentication with no keys is
+        // precisely the state it exists to resolve.
+        if (args.Length > 0 && string.Equals(args[0], "keys", StringComparison.Ordinal))
+        {
+            TryGetConfigPath(args, out string keysConfigPath);
+            return await KeyCommands.RunAsync(args, string.IsNullOrEmpty(keysConfigPath) ? null : keysConfigPath);
+        }
+
         WebApplication app = BuildApplication(args);
         await app.RunAsync();
         return 0;
@@ -91,8 +100,13 @@ public static class Program
 
         WarnAboutInsecureConfiguration(app, options);
 
+        // Before the endpoints, and before the passthrough proxy. Health checks are reached
+        // first and stay open deliberately: a liveness probe that needs a credential is a
+        // liveness probe that fails during credential rotation.
         app.MapHealthChecks("/health/live");
         app.MapHealthChecks("/health/ready");
+
+        app.UseMiddleware<VirtualKeyAuthenticationMiddleware>();
 
         ChatCompletionsEndpoint.Map(app);
         ModelsEndpoint.Map(app);
@@ -200,6 +214,10 @@ public static class Program
 
             Usage:
               gatehouse [options]
+              gatehouse keys <create|list|revoke> [options]
+
+            Commands:
+              keys                 Manage virtual keys. Run 'gatehouse keys' for details.
 
             Options:
               --config <path>    Load configuration from a JSON file, in addition to

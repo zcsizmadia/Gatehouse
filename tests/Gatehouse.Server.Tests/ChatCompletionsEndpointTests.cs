@@ -123,16 +123,22 @@ public class ChatCompletionsEndpointTests
             upstream.BaseAddress,
             apiKey: "the-real-upstream-key");
 
+        // The caller presents its own Gatehouse virtual key — a real, valid one, since the
+        // gateway now requires authentication. The upstream must still see the provider
+        // credential and nothing of the caller's.
         using HttpRequestMessage request = StreamRequest("gpt-4o-mini");
-        request.Headers.Add("Authorization", "Bearer gh-sk-caller-virtual-key");
 
         using HttpResponseMessage response = await gateway.Client.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead);
         await response.Content.ReadAsStringAsync();
 
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
         await Assert.That(upstream.LastAuthorization).IsEqualTo("Bearer the-real-upstream-key");
-        await Assert.That(upstream.LastAuthorization!).DoesNotContain("gh-sk-caller-virtual-key");
+
+        // The virtual key must not reach the provider. A gateway that forwarded it would be a
+        // credential relay rather than a boundary.
+        await Assert.That(upstream.LastAuthorization!).DoesNotContain(gateway.VirtualKeySecret!);
     }
 
     [Test]

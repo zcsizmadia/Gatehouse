@@ -2,6 +2,7 @@ using System.Text.Json;
 using Gatehouse.Diagnostics;
 using Gatehouse.Providers;
 using Gatehouse.Routing;
+using Gatehouse.Security;
 using Gatehouse.Server.Infrastructure;
 using Gatehouse.Storage;
 using Gatehouse.Streaming;
@@ -104,6 +105,11 @@ internal static class ChatCompletionsEndpoint
 
         CompletionTracker tracker = CompletionTracker.Start(request, store, timeProvider);
         tracker.Route = route;
+
+        // Null when authentication is disabled, which the request log records faithfully as
+        // unattributed rather than inventing an owner for it.
+        tracker.AuthenticatedKey =
+            context.Items[VirtualKeyAuthenticationMiddleware.AuthenticatedKeyItem] as VirtualKey;
 
         if (request.Stream)
         {

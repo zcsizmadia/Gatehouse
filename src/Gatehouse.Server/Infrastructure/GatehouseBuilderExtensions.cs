@@ -8,6 +8,7 @@ using Gatehouse.Providers.AzureOpenAI;
 using Gatehouse.Providers.Google;
 using Gatehouse.Providers.OpenAI;
 using Gatehouse.Routing;
+using Gatehouse.Security;
 using Gatehouse.Storage;
 using Gatehouse.Storage.Sqlite;
 using Microsoft.Extensions.Options;
@@ -51,6 +52,13 @@ internal static class GatehouseBuilderExtensions
         builder.Services.AddSingleton<SqliteRequestLogStore>();
         builder.Services.AddSingleton<IRequestLogStore>(sp => sp.GetRequiredService<SqliteRequestLogStore>());
         builder.Services.AddHostedService(sp => sp.GetRequiredService<SqliteRequestLogStore>());
+
+        builder.Services.AddSingleton<IVirtualKeyStore, SqliteVirtualKeyStore>();
+        builder.Services.AddSingleton<VirtualKeyAuthenticator>();
+
+        // Registered after the request-log store's hosted service, because that is what creates
+        // and migrates the schema this check reads. Hosted services start in registration order.
+        builder.Services.AddHostedService<AuthenticationStartupCheck>();
 
         builder.AddConfiguredProviders();
 

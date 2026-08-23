@@ -34,8 +34,24 @@ docker run --rm -p 8080:8080 \
 Then:
 
 ```bash
-curl http://localhost:8080/v1/models
+curl -H "Authorization: Bearer gh-sk-..." http://localhost:8080/v1/models
 ```
+
+### Issue a key first
+
+Authentication is required by default and the container will exit on startup without
+a key. The image has no shell, but the entrypoint is the binary, so the CLI is
+reachable directly:
+
+```bash
+docker volume create gatehouse-data
+
+docker run --rm -v gatehouse-data:/var/lib/gatehouse \
+  gatehouse:dev keys create --name my-app --org acme
+```
+
+The secret is printed once. Use the same volume when starting the gateway, or it
+will not find the key.
 
 ### The volume is not optional
 

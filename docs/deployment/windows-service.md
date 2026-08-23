@@ -26,6 +26,14 @@ Copy-Item .\gatehouse.json C:\ProgramData\Gatehouse\gatehouse.json
   -BinaryPath 'C:\Program Files\Gatehouse\gatehouse.exe' `
   -ConfigPath C:\ProgramData\Gatehouse\gatehouse.json
 
+# Authentication is required by default, and the service will fail to start
+# without a key rather than start and reject every request. The install script
+# ACLs the data directory to the service account, so run this elevated and the
+# database it creates will be readable by the service.
+& 'C:\Program Files\Gatehouse\gatehouse.exe' keys create `
+  --name my-app --org acme --team platform `
+  --config C:\ProgramData\Gatehouse\gatehouse.json
+
 Start-Service -Name Gatehouse
 ```
 

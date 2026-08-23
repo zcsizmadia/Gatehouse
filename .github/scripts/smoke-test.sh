@@ -118,6 +118,24 @@ for _ in $(seq 1 30); do
 done
 
 # ------------------------------------------------------------------------------
+# Issue a virtual key
+# ------------------------------------------------------------------------------
+# Authentication is required by default, and a gateway with no keys refuses to
+# start — so this step is not optional, and running it here also proves the
+# `keys` subcommand works in the published NativeAOT binary rather than only
+# under the JIT.
+echo "Creating a virtual key"
+"$BINARY" keys create --name smoke-test --org ci --team ci --app smoke \
+    --config "$WORK_DIR_NATIVE/gatehouse.json" > "$WORK_DIR/keys.txt" 2>&1 \
+    || { echo "--- keys create output ---" >&2; cat "$WORK_DIR/keys.txt" >&2; fail "keys create failed"; }
+
+SECRET="$(grep -oE 'gh-sk-[A-Za-z0-9_-]+' "$WORK_DIR/keys.txt" | head -n 1)"
+[ -n "$SECRET" ] || { cat "$WORK_DIR/keys.txt" >&2; fail "no secret in the keys create output"; }
+echo "PASS: virtual key issued"
+
+AUTH_HEADER="Authorization: Bearer $SECRET"
+
+# ------------------------------------------------------------------------------
 # Start the gateway
 # ------------------------------------------------------------------------------
 echo "Starting $BINARY"
@@ -147,7 +165,7 @@ echo "PASS: gateway started and reported ready"
 # ------------------------------------------------------------------------------
 # 2. Model listing
 # ------------------------------------------------------------------------------
-models="$(curl --silent --fail "http://127.0.0.1:$GATEWAY_PORT/v1/models")"
+models="$(curl --silent --fail --header "$AUTH_HEADER" "http://127.0.0.1:$GATEWAY_PORT/v1/models")"
 echo "$models" | grep -q 'smoke-model' \
     || fail "/v1/models did not list the configured alias. Got: $models"
 echo "PASS: /v1/models lists the configured alias"
@@ -160,6 +178,7 @@ stream_output="$WORK_DIR/stream.txt"
 start_ns=$(date +%s%N)
 
 curl --silent --no-buffer --fail \
+    --header "$AUTH_HEADER" \
     --header 'Content-Type: application/json' \
     --data '{"model":"smoke-model","stream":true,"messages":[{"role":"user","content":"hello"}]}' \
     "http://127.0.0.1:$GATEWAY_PORT/v1/chat/completions" > "$stream_output" \
@@ -212,6 +231,7 @@ echo "PASS: $frame_count separate SSE frames"
 # 4. Buffered completion
 # ------------------------------------------------------------------------------
 buffered="$(curl --silent --fail \
+    --header "$AUTH_HEADER" \
     --header 'Content-Type: application/json' \
     --data '{"model":"smoke-model","stream":false,"messages":[{"role":"user","content":"hello"}]}' \
     "http://127.0.0.1:$GATEWAY_PORT/v1/chat/completions")"
@@ -226,12 +246,28 @@ echo "PASS: buffered completion reports provider usage and the serving provider"
 # 5. Unknown model
 # ------------------------------------------------------------------------------
 status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --header "$AUTH_HEADER" \
     --header 'Content-Type: application/json' \
     --data '{"model":"not-configured","messages":[{"role":"user","content":"hi"}]}' \
     "http://127.0.0.1:$GATEWAY_PORT/v1/chat/completions")"
 
 [ "$status" = "404" ] || fail "unknown model returned HTTP $status, expected 404"
 echo "PASS: unknown model rejected with 404"
+
+# ------------------------------------------------------------------------------
+# 6. Authentication is actually enforced
+# ------------------------------------------------------------------------------
+# The same request without a credential. A gateway holding provider credentials
+# that serves anonymous callers is the one failure here worth failing the build
+# over, so it is asserted rather than assumed from the fact that the authenticated
+# calls above worked.
+status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    --header 'Content-Type: application/json' \
+    --data '{"model":"smoke-model","messages":[{"role":"user","content":"hi"}]}' \
+    "http://127.0.0.1:$GATEWAY_PORT/v1/chat/completions")"
+
+[ "$status" = "401" ] || fail "an unauthenticated request returned HTTP $status, expected 401"
+echo "PASS: unauthenticated request rejected with 401"
 
 # ------------------------------------------------------------------------------
 # The request log must exist. A gateway that serves traffic without recording it

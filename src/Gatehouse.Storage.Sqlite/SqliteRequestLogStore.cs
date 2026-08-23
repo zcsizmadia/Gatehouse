@@ -92,7 +92,8 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
             """
             SELECT id, timestamp_utc, requested_model, provider, upstream_model, streamed,
                    status_code, prompt_tokens, completion_tokens, usage_is_provider_reported,
-                   duration_ms, time_to_first_chunk_ms, error_type
+                   duration_ms, time_to_first_chunk_ms, error_type,
+                   virtual_key_id, organisation, team, application
             FROM request_log
             ORDER BY timestamp_utc DESC
             LIMIT $limit;
@@ -119,6 +120,10 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
                 Duration = TimeSpan.FromMilliseconds(reader.GetDouble(10)),
                 TimeToFirstChunk = reader.IsDBNull(11) ? null : TimeSpan.FromMilliseconds(reader.GetDouble(11)),
                 ErrorType = reader.IsDBNull(12) ? null : reader.GetString(12),
+                VirtualKeyId = reader.IsDBNull(13) ? null : reader.GetString(13),
+                Organisation = reader.IsDBNull(14) ? null : reader.GetString(14),
+                Team = reader.IsDBNull(15) ? null : reader.GetString(15),
+                Application = reader.IsDBNull(16) ? null : reader.GetString(16),
             });
         }
 
@@ -263,11 +268,13 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
                 INSERT OR REPLACE INTO request_log (
                     id, timestamp_utc, requested_model, provider, upstream_model, streamed,
                     status_code, prompt_tokens, completion_tokens, usage_is_provider_reported,
-                    duration_ms, time_to_first_chunk_ms, error_type
+                    duration_ms, time_to_first_chunk_ms, error_type,
+                    virtual_key_id, organisation, team, application
                 ) VALUES (
                     $id, $timestamp, $requestedModel, $provider, $upstreamModel, $streamed,
                     $statusCode, $promptTokens, $completionTokens, $usageIsProviderReported,
-                    $durationMs, $timeToFirstChunkMs, $errorType
+                    $durationMs, $timeToFirstChunkMs, $errorType,
+                    $virtualKeyId, $organisation, $team, $application
                 );
                 """;
 
@@ -286,6 +293,10 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
             SqliteParameter durationMs = command.Parameters.Add("$durationMs", SqliteType.Real);
             SqliteParameter ttfcMs = command.Parameters.Add("$timeToFirstChunkMs", SqliteType.Real);
             SqliteParameter errorType = command.Parameters.Add("$errorType", SqliteType.Text);
+            SqliteParameter virtualKeyId = command.Parameters.Add("$virtualKeyId", SqliteType.Text);
+            SqliteParameter organisation = command.Parameters.Add("$organisation", SqliteType.Text);
+            SqliteParameter team = command.Parameters.Add("$team", SqliteType.Text);
+            SqliteParameter application = command.Parameters.Add("$application", SqliteType.Text);
 
             foreach (RequestRecord record in batch)
             {
@@ -302,6 +313,10 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
                 durationMs.Value = record.Duration.TotalMilliseconds;
                 ttfcMs.Value = record.TimeToFirstChunk is { } ttfc ? ttfc.TotalMilliseconds : DBNull.Value;
                 errorType.Value = (object?)record.ErrorType ?? DBNull.Value;
+                virtualKeyId.Value = (object?)record.VirtualKeyId ?? DBNull.Value;
+                organisation.Value = (object?)record.Organisation ?? DBNull.Value;
+                team.Value = (object?)record.Team ?? DBNull.Value;
+                application.Value = (object?)record.Application ?? DBNull.Value;
 
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }

@@ -54,8 +54,16 @@ production. See the [roadmap](./ROADMAP.md) for what lands when, and
 
 ## Quick start
 
+Issue a key first. Gatehouse requires authentication by default and will refuse to
+start without one, rather than start and reject every request:
+
 ```bash
-# Run the gateway with the sample configuration
+# 1. Issue a virtual key. The secret is shown once and only its hash is stored.
+dotnet run --project src/Gatehouse.Server -- keys create \
+  --name my-app --org acme --team platform \
+  --config ./samples/gatehouse.json
+
+# 2. Run the gateway
 dotnet run --project src/Gatehouse.Server -- --config ./samples/gatehouse.json
 ```
 
@@ -63,7 +71,7 @@ Then point any OpenAI client at it:
 
 ```bash
 curl http://localhost:8080/v1/chat/completions \
-  -H "Authorization: Bearer gh-sk-local-dev" \
+  -H "Authorization: Bearer gh-sk-..." \
   -H "Content-Type: application/json" \
   -d '{
         "model": "gpt-4o-mini",
@@ -72,8 +80,25 @@ curl http://localhost:8080/v1/chat/completions \
       }'
 ```
 
-The same request works against every configured provider — swap the `model` and
-Gatehouse routes it, meters it, and records it.
+The same request works against every configured provider — swap the `model` for
+`claude-sonnet`, `gemini-flash` or `local` and Gatehouse translates it, meters it,
+and records who to bill.
+
+For local experiments without a key, set `Gatehouse:Authentication:Mode` to
+`Disabled`. Gatehouse warns about it on every startup, because the gateway holds
+your provider credentials.
+
+### Managing keys
+
+```bash
+gatehouse keys create --name checkout-service --org acme --team payments --app checkout
+gatehouse keys list
+gatehouse keys revoke vk_1234567890abcdef
+```
+
+Revocation takes effect immediately and stops one application without rotating
+anything at the provider. The record is kept, because the request log references
+it and an audit trail that points at deleted rows is not an audit trail.
 
 ## Deployment
 
@@ -101,7 +126,8 @@ rule that governs how results may be quoted.
 Being honest about this is cheaper than being discovered:
 
 - Not production-ready. Phase 0 is an architecture spike.
-- No governance yet — budgets, SSO and RBAC arrive in Phase 2.
+- Virtual keys authenticate and attribute requests, but they do not yet *limit*
+  anything. Budgets, spend enforcement, SSO and RBAC arrive in Phase 2.
 - Semantic caching is deliberately **not** in the near-term plan. Exact-match
   caching only, until we can ship semantic caching with honest safety metrics.
 - Provider coverage is deliberately capped at seven. Breadth is how gateways rot.

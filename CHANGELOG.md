@@ -12,6 +12,22 @@ guarantee takes effect at v1.0 — see the [roadmap](./ROADMAP.md).
 
 ### Added
 
+**Phase 1 — virtual keys.**
+
+- Virtual keys: `Authorization: Bearer gh-sk-...` credentials that let applications
+  hold a Gatehouse key instead of a provider key. Revoking one stops a single
+  application without rotating anything upstream.
+- `gatehouse keys create|list|revoke`. The secret is shown once; only a SHA-256 hash
+  is stored, so it cannot be recovered and a stolen database yields no credentials.
+- Chargeback attribution: organisation, team and application labels are recorded on
+  every request, denormalised so a report for a past period attributes spend to
+  whoever owned it then rather than to whoever owns the key now.
+- Authentication is **required by default**. A gateway configured to require it with
+  no usable key refuses to start, rather than starting and rejecting every request —
+  the failure mode that looks healthy to an orchestrator.
+- Schema migration to version 2, adding the key table and the attribution columns
+  without rewriting existing rows.
+
 **Phase 1 — providers.**
 
 - Azure OpenAI, via the existing OpenAI-compatible provider plus deployment-in-path

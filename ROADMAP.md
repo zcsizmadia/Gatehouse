@@ -39,7 +39,10 @@ The smallest thing a .NET shop can actually deploy.
   - [x] Anthropic
   - [x] Google Gemini
   - [ ] Amazon Bedrock — deferred to its own pull request; see ADR 0002
-- [ ] Virtual keys, fallback chains, circuit breakers
+- Virtual keys, fallback chains, circuit breakers
+  - [x] Virtual keys, with revocation, expiry and chargeback attribution
+  - [ ] Fallback chains
+  - [ ] Circuit breakers
 - Token metering that **reconciles against provider invoices** — LiteLLM's
   most-cited bug, and the one finance teams notice
 - Exact-match caching only

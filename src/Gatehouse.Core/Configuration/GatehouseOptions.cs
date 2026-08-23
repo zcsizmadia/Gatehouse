@@ -37,6 +37,9 @@ public sealed class GatehouseOptions
     public IDictionary<string, ModelRouteOptions> Models { get; set; } =
         new Dictionary<string, ModelRouteOptions>(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>How callers authenticate to the gateway.</summary>
+    public AuthenticationOptions Authentication { get; set; } = new();
+
     /// <summary>Where request records are persisted.</summary>
     public StoreOptions Store { get; set; } = new();
 
@@ -157,6 +160,41 @@ public sealed class ModelRouteOptions
     /// change underneath early adopters.
     /// </summary>
     public IList<string> Fallbacks { get; set; } = [];
+}
+
+/// <summary>How callers prove who they are.</summary>
+public enum AuthenticationMode
+{
+    /// <summary>
+    /// Every request must present a valid virtual key. The default.
+    /// </summary>
+    Required = 0,
+
+    /// <summary>
+    /// Requests are accepted without a credential.
+    /// </summary>
+    /// <remarks>
+    /// For local development, and for deployments that authenticate at a layer in front of the
+    /// gateway. Gatehouse logs a warning on every startup in this mode: an unauthenticated
+    /// gateway holding provider credentials is worth being reminded about, and a warning that
+    /// only appeared once would be a warning nobody saw.
+    /// </remarks>
+    Disabled = 1,
+}
+
+/// <summary>Authentication configuration.</summary>
+public sealed class AuthenticationOptions
+{
+    /// <summary>
+    /// Whether a virtual key is required. Defaults to <see cref="AuthenticationMode.Required"/>.
+    /// </summary>
+    /// <remarks>
+    /// Secure by default, and it costs something: a fresh deployment with no keys yet will
+    /// refuse to start rather than start and reject everything. That is deliberate — see the
+    /// startup validation — because a gateway that accepts connections and 401s every request
+    /// looks healthy to an orchestrator and gets rolled out everywhere before anyone notices.
+    /// </remarks>
+    public AuthenticationMode Mode { get; set; } = AuthenticationMode.Required;
 }
 
 /// <summary>Where Gatehouse persists request records.</summary>

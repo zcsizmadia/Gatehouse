@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Gatehouse.Diagnostics;
 using Gatehouse.Routing;
+using Gatehouse.Security;
 using Gatehouse.Storage;
 using Gatehouse.Wire;
 
@@ -57,6 +58,16 @@ internal sealed class CompletionTracker
 
     /// <summary>The resolved route, once routing has succeeded.</summary>
     public ModelRoute? Route { get; set; }
+
+    /// <summary>
+    /// The virtual key that authorised the request, when authentication is enabled.
+    /// </summary>
+    /// <remarks>
+    /// Its labels are copied onto the record rather than referenced, so a chargeback report for
+    /// a past period attributes spend to whoever owned it then — keys get relabelled as
+    /// applications move between teams.
+    /// </remarks>
+    public VirtualKey? AuthenticatedKey { get; set; }
 
     /// <summary>
     /// Begins tracking a request and opens its span.
@@ -225,6 +236,12 @@ internal sealed class CompletionTracker
                 Duration = duration,
                 TimeToFirstChunk = timeToFirstChunk,
                 ErrorType = errorType,
+
+                // Labels copied, not referenced. See AuthenticatedKey.
+                VirtualKeyId = AuthenticatedKey?.Id,
+                Organisation = AuthenticatedKey?.Organisation,
+                Team = AuthenticatedKey?.Team,
+                Application = AuthenticatedKey?.Application,
             },
             cancellationToken);
     }

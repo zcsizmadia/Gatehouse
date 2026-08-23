@@ -23,7 +23,7 @@ namespace Gatehouse.Storage.Sqlite;
 public static class SqliteSchema
 {
     /// <summary>The schema version this build expects.</summary>
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     private static readonly string[] Migrations =
     [
@@ -54,6 +54,44 @@ public static class SqliteSchema
 
         CREATE INDEX IF NOT EXISTS ix_request_log_model
             ON request_log (requested_model, timestamp_utc DESC);
+        """,
+
+        // Version 2 — virtual keys, and attribution on the request log.
+        //
+        // Lookup is by secret_hash, so that is the indexed column and it is unique: two keys
+        // hashing the same would make authentication ambiguous.
+        //
+        // The attribution columns are added to request_log rather than joined at query time.
+        // Keys get relabelled, and a chargeback report for a past period must attribute spend
+        // to whoever owned it then. ALTER TABLE ADD COLUMN leaves existing rows untouched,
+        // which is what an append-only audit record requires.
+        """
+        CREATE TABLE IF NOT EXISTS virtual_keys (
+            id             TEXT NOT NULL PRIMARY KEY,
+            name           TEXT NOT NULL,
+            secret_hash    TEXT NOT NULL,
+            secret_prefix  TEXT NOT NULL,
+            organisation   TEXT     NULL,
+            team           TEXT     NULL,
+            application    TEXT     NULL,
+            created_at_utc TEXT NOT NULL,
+            expires_at_utc TEXT     NULL,
+            revoked_at_utc TEXT     NULL
+        ) STRICT;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_virtual_keys_secret_hash
+            ON virtual_keys (secret_hash);
+
+        CREATE INDEX IF NOT EXISTS ix_virtual_keys_created
+            ON virtual_keys (created_at_utc DESC);
+
+        ALTER TABLE request_log ADD COLUMN virtual_key_id TEXT NULL;
+        ALTER TABLE request_log ADD COLUMN organisation   TEXT NULL;
+        ALTER TABLE request_log ADD COLUMN team           TEXT NULL;
+        ALTER TABLE request_log ADD COLUMN application    TEXT NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_request_log_attribution
+            ON request_log (organisation, team, application, timestamp_utc DESC);
         """,
     ];
 

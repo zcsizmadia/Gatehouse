@@ -23,6 +23,19 @@
       "//OtlpEndpoint": "http://localhost:4317"
     },
 
+    "Authentication": {
+      "//": [
+        "Required is the default. A gateway with no keys refuses to start rather than",
+        "starting and rejecting every request - the failure mode that looks healthy to an",
+        "orchestrator. Issue one with:  gatehouse keys create --name my-app",
+        "",
+        "Set to Disabled for local development, or where something in front of the gateway",
+        "authenticates callers. Gatehouse warns on every startup in that mode, because it",
+        "holds your provider credentials."
+      ],
+      "Mode": "Required"
+    },
+
     "Providers": {
       "openai": {
         "//": [

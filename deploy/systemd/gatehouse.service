@@ -18,9 +18,19 @@ Restart=on-failure
 RestartSec=5s
 
 # --- identity -----------------------------------------------------------------
-# Gatehouse holds provider credentials. It never needs root, and DynamicUser gives
-# it a transient uid with no home, no shell and no login.
-DynamicUser=yes
+# Gatehouse holds provider credentials and never needs root.
+#
+# A static system user rather than DynamicUser=yes, which would otherwise be the
+# stronger choice. The reason is provisioning: `gatehouse keys create` writes the
+# same SQLite database this service reads, and with a transient uid an
+# administrator has no identity to run that command as. The key would land in a
+# root-owned file the service then could not write, and the failure would look
+# like a corrupt database rather than a permissions mistake.
+#
+# Create it once with:
+#   useradd --system --no-create-home --shell /usr/sbin/nologin gatehouse
+User=gatehouse
+Group=gatehouse
 StateDirectory=gatehouse
 StateDirectoryMode=0700
 ConfigurationDirectory=gatehouse
