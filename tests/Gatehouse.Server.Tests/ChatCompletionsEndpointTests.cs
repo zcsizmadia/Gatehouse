@@ -37,9 +37,20 @@ public class ChatCompletionsEndpointTests
     [Test]
     public async Task Delivers_chunks_as_they_are_produced_rather_than_in_one_burst()
     {
-        // The assertion the whole streaming design exists for. If anything on the path
-        // buffers — the provider, the SSE writer, Kestrel — the text still arrives intact and
-        // every other test in this file still passes. Only the arrival *spacing* changes.
+        // The property the whole streaming design exists for. If anything on the path buffers,
+        // the text still arrives intact and every other test in this file still passes — only
+        // the *timing* changes.
+        //
+        // Measured server-side, from the gateway's own time-to-first-chunk, rather than from
+        // inter-chunk arrival times at the client. Client-observed spacing cannot distinguish
+        // gateway buffering from client scheduling: if the test task is descheduled between
+        // receiving response headers and reading the body, the socket buffer accumulates the
+        // whole stream and the observed spacing collapses to nothing for a perfectly healthy
+        // gateway. That made the previous version of this test flaky under parallel load.
+        //
+        // Time to first chunk is recorded inside the gateway after the flush completes, so it
+        // is immune to client scheduling and still catches a provider or SSE-writer that
+        // accumulates before writing.
         await using FakeUpstream upstream = await FakeUpstream.StartAsync();
         upstream.Chunks = ["one", "two", "three"];
         upstream.ChunkDelay = TimeSpan.FromMilliseconds(200);
@@ -47,15 +58,22 @@ public class ChatCompletionsEndpointTests
         await using GatehouseHost gateway = await GatehouseHost.StartAsync(upstream.BaseAddress);
 
         StreamedCompletion result = await ReadStreamAsync(gateway, "gpt-4o-mini");
+        await Assert.That(result.Text).IsEqualTo("onetwothree");
 
+        RequestRecord record = await WaitForRecordAsync(gateway);
+        await Assert.That(record.TimeToFirstChunk).IsNotNull();
+
+        // The upstream sleeps 200 ms before each of three chunks, so it finishes at ~600 ms and
+        // emits its first at ~200 ms. A gateway that buffered would not flush anything until
+        // the upstream completed, putting time-to-first-chunk level with the total duration.
+        // Half is a wide margin that still fails decisively on that.
+        TimeSpan firstChunk = record.TimeToFirstChunk!.Value;
+        await Assert.That(firstChunk).IsLessThan(record.Duration * 0.5);
+
+        // Each chunk must also be its own SSE frame. One frame containing everything would mean
+        // the relay concatenated the stream before writing it, which the timing check above
+        // would not notice.
         await Assert.That(result.ChunkOffsets.Count).IsGreaterThanOrEqualTo(3);
-
-        TimeSpan spread = result.ChunkOffsets[^1] - result.ChunkOffsets[0];
-
-        // Two 200 ms gaps separate the first and last chunk upstream. A buffering regression
-        // collapses that spread to near zero; 250 ms leaves generous room for scheduling noise
-        // while still failing decisively if the stream is batched.
-        await Assert.That(spread).IsGreaterThan(TimeSpan.FromMilliseconds(250));
     }
 
     [Test]
