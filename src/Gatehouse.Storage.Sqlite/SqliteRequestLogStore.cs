@@ -50,6 +50,10 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
     private readonly bool _autoMigrate;
     private readonly ILogger<SqliteRequestLogStore> _logger;
 
+    // One long-lived write connection. SQLite serialises writers anyway, so a pool would buy
+    // nothing, and holding it open keeps the WAL checkpointing behaviour predictable.
+    private SqliteConnection? _connection;
+
     /// <summary>Creates the store.</summary>
     /// <param name="options">The bound Gatehouse configuration.</param>
     /// <param name="logger">The logger.</param>
@@ -122,57 +126,83 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
     }
 
     /// <summary>
-    /// Opens the database, migrates it, and drains queued records until shutdown.
+    /// Opens the database and applies any pending migrations before the host reports started.
     /// </summary>
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <remarks>
+    /// Deliberately here rather than in <see cref="ExecuteAsync"/>. Two reasons, and both are
+    /// about failing at the right moment:
+    /// <list type="bullet">
+    /// <item>
+    /// <description>
+    /// <c>ExecuteAsync</c> runs concurrently with the rest of startup, so migrating there
+    /// would let the gateway begin serving requests against a database that has no tables
+    /// yet — the records would be dropped and the operator would see nothing wrong.
+    /// </description>
+    /// </item>
+    /// <item>
+    /// <description>
+    /// <c>ExecuteAsync</c> receives the <em>stopping</em> token. Migrating with it means a
+    /// shutdown arriving during startup cancels the migration half-applied.
+    /// </description>
+    /// </item>
+    /// </list>
+    /// An unwritable database now fails the rollout instead of silently costing an audit trail.
+    /// </remarks>
+    public override async Task StartAsync(CancellationToken cancellationToken)
     {
-        await using SqliteConnection connection = new(_connectionString);
-        await connection.OpenAsync(stoppingToken);
-        await SqliteSchema.ApplyPragmasAsync(connection, stoppingToken);
+        _connection = new SqliteConnection(_connectionString);
+        await _connection.OpenAsync(cancellationToken);
+        await SqliteSchema.ApplyPragmasAsync(_connection, cancellationToken);
 
         if (_autoMigrate)
         {
-            int version = await SqliteSchema.MigrateAsync(connection, stoppingToken);
+            int version = await SqliteSchema.MigrateAsync(_connection, cancellationToken);
             _logger.SchemaReady(version);
         }
 
-        List<RequestRecord> batch = new(MaxBatchSize);
-
-        // Drain on shutdown rather than abandoning the queue: records already accepted from
-        // the request path have been promised to the caller as recorded.
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await FillBatchAsync(batch, stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-
-            if (batch.Count > 0)
-            {
-                await WriteBatchAsync(connection, batch, CancellationToken.None);
-                batch.Clear();
-            }
-        }
-
-        await DrainRemainingAsync(connection);
+        await base.StartAsync(cancellationToken);
     }
 
-    private async Task FillBatchAsync(List<RequestRecord> batch, CancellationToken stoppingToken)
+    /// <summary>Drains queued records until shutdown.</summary>
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Block until at least one record is available, then take whatever else is already
-        // queued without waiting. This keeps latency low when traffic is light and batches
-        // naturally when it is heavy, with no timer to tune.
-        RequestRecord first = await _queue.Reader.ReadAsync(stoppingToken);
-        batch.Add(first);
+        SqliteConnection connection = _connection
+            ?? throw new InvalidOperationException("StartAsync must run before ExecuteAsync.");
 
-        while (batch.Count < MaxBatchSize && _queue.Reader.TryRead(out RequestRecord? next))
+        List<RequestRecord> batch = new(MaxBatchSize);
+
+        try
         {
-            batch.Add(next);
+            // WaitToReadAsync rather than ReadAsync: it returns false when the channel has
+            // been completed and drained, instead of throwing ChannelClosedException. That
+            // distinction matters because shutdown completes the writer and cancels the token
+            // at almost the same moment, and an unhandled exception on that path would fault
+            // the host rather than stopping it.
+            while (await _queue.Reader.WaitToReadAsync(stoppingToken))
+            {
+                // Take everything already queued without waiting for more. Latency stays low
+                // when traffic is light and batches form naturally when it is heavy, with no
+                // timer to tune.
+                while (batch.Count < MaxBatchSize && _queue.Reader.TryRead(out RequestRecord? next))
+                {
+                    batch.Add(next);
+                }
+
+                if (batch.Count > 0)
+                {
+                    await WriteBatchAsync(connection, batch, CancellationToken.None);
+                    batch.Clear();
+                }
+            }
         }
+        catch (OperationCanceledException)
+        {
+            // Host shutdown. Anything still queued is written below.
+        }
+
+        // Drain rather than abandon: a record accepted from the request path has already been
+        // treated as recorded, and losing it would put a hole in the usage history.
+        await DrainRemainingAsync(connection);
     }
 
     private async Task DrainRemainingAsync(SqliteConnection connection)
@@ -268,7 +298,24 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
     /// <summary>Ensures queued records are flushed when the host shuts down.</summary>
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
+        // Complete the writer before signalling the stop, so the drain loop sees an
+        // end-of-stream rather than racing a cancellation and leaving records behind.
         _queue.Writer.TryComplete();
         await base.StopAsync(cancellationToken);
+
+        if (_connection is not null)
+        {
+            await _connection.DisposeAsync();
+            _connection = null;
+        }
+    }
+
+    /// <inheritdoc />
+    public override void Dispose()
+    {
+        _connection?.Dispose();
+        _connection = null;
+        base.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

@@ -25,9 +25,20 @@ pull request without having to guess at anything.
 
 ```bash
 dotnet restore
-dotnet build   -c Release
-dotnet test    -c Release
+dotnet build -c Release
+
+# Run the tests. Note: `dotnet run`, not `dotnet test` — see below.
+dotnet run -c Release --project tests/Gatehouse.Core.Tests   -f net10.0
+dotnet run -c Release --project tests/Gatehouse.Server.Tests -f net10.0
 ```
+
+> **Why not `dotnet test`?** TUnit builds each test project into a self-contained
+> executable on Microsoft.Testing.Platform. On the .NET 10 SDK, `dotnet test`
+> currently fails to launch those apps and reports "Zero tests ran" — it never
+> starts the process, so nothing is discovered. Running the app directly is
+> TUnit's first-class mode and is what CI does, across every target framework.
+> Tracked in [#2](https://github.com/zcsizmadia/Gatehouse/issues/2); when the
+> integration works, `dotnet test` becomes the documented command again.
 
 `dotnet build` treats **all warnings as errors**. This is deliberate: a gateway
 that warns during build is a gateway that surprises in production. If an analyzer

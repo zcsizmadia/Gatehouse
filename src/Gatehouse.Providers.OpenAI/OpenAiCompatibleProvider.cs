@@ -127,7 +127,10 @@ public sealed class OpenAiCompatibleProvider : IChatProvider
             Created = parsed.Created,
             Model = parsed.Model,
             Choices = parsed.Choices,
-            Usage = parsed.Usage,
+
+            // Stamped as provider-reported: these counts came off the upstream response, and
+            // the flag does not survive JSON. See TokenUsage.AsProviderReported.
+            Usage = parsed.Usage?.AsProviderReported(),
             GatehouseProvider = Name,
         };
     }
@@ -203,7 +206,26 @@ public sealed class OpenAiCompatibleProvider : IChatProvider
 
         try
         {
-            return JsonSerializer.Deserialize(payload, GatehouseJsonContext.Default.ChatCompletionChunk);
+            ChatCompletionChunk? chunk = JsonSerializer.Deserialize(
+                payload,
+                GatehouseJsonContext.Default.ChatCompletionChunk);
+
+            if (chunk?.Usage is not { } usage)
+            {
+                return chunk;
+            }
+
+            // Rebuilt rather than mutated so the wire types stay immutable. Only the final
+            // chunk of a stream carries usage, so this copy happens once per completion.
+            return new ChatCompletionChunk
+            {
+                Id = chunk.Id,
+                ObjectType = chunk.ObjectType,
+                Created = chunk.Created,
+                Model = chunk.Model,
+                Choices = chunk.Choices,
+                Usage = usage.AsProviderReported(),
+            };
         }
         catch (JsonException ex)
         {

@@ -5,10 +5,20 @@ namespace Gatehouse.Configuration;
 /// The root of the Gatehouse configuration surface.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Configuration is a first-class product surface rather than an implementation detail.
 /// The Phase 2 admin UI is required to have <em>config-as-code parity</em>: anything the UI
 /// can change must be expressible in a file that lives in source control. That constraint
 /// starts here, so the file format is designed to be reviewed in a pull request.
+/// </para>
+/// <para>
+/// Every property on this type and its children uses <c>set</c> rather than <c>init</c>,
+/// which is deliberate and load-bearing. The configuration binding source generator — the
+/// AOT-safe replacement for reflection-based binding — emits plain assignments, so it cannot
+/// populate an init-only property. It does not fail either: the object binds with every value
+/// left at its default. That produces a gateway which starts, reports healthy, and rejects
+/// every request because no provider has a <c>Kind</c>. Do not "tidy" these into <c>init</c>.
+/// </para>
 /// </remarks>
 public sealed class GatehouseOptions
 {
@@ -18,20 +28,20 @@ public sealed class GatehouseOptions
     /// <summary>
     /// Upstream providers, keyed by the name routes refer to them by.
     /// </summary>
-    public IDictionary<string, ProviderOptions> Providers { get; init; } =
+    public IDictionary<string, ProviderOptions> Providers { get; set; } =
         new Dictionary<string, ProviderOptions>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Model routes, keyed by the alias callers put in the <c>model</c> request field.
     /// </summary>
-    public IDictionary<string, ModelRouteOptions> Models { get; init; } =
+    public IDictionary<string, ModelRouteOptions> Models { get; set; } =
         new Dictionary<string, ModelRouteOptions>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Where request records are persisted.</summary>
-    public StoreOptions Store { get; init; } = new();
+    public StoreOptions Store { get; set; } = new();
 
     /// <summary>Observability configuration.</summary>
-    public TelemetryOptions Telemetry { get; init; } = new();
+    public TelemetryOptions Telemetry { get; set; } = new();
 }
 
 /// <summary>Configuration for one upstream provider.</summary>
@@ -41,10 +51,10 @@ public sealed class ProviderOptions
     /// The provider implementation to use, matching <c>IChatProvider.Name</c> — for example
     /// <c>openai-compatible</c>.
     /// </summary>
-    public string Kind { get; init; } = string.Empty;
+    public string Kind { get; set; } = string.Empty;
 
     /// <summary>The upstream base address, including any path prefix.</summary>
-    public string BaseUrl { get; init; } = string.Empty;
+    public string BaseUrl { get; set; } = string.Empty;
 
     /// <summary>
     /// A literal API key. Provided for local development only.
@@ -54,13 +64,13 @@ public sealed class ProviderOptions
     /// provider supports it. A key committed to a configuration file is a key in your git
     /// history, and Gatehouse logs a warning at startup when this property is used.
     /// </remarks>
-    public string? ApiKey { get; init; }
+    public string? ApiKey { get; set; }
 
     /// <summary>
     /// The name of an environment variable holding the API key. Takes precedence over
     /// <see cref="ApiKey"/> when both are set.
     /// </summary>
-    public string? ApiKeyEnvironmentVariable { get; init; }
+    public string? ApiKeyEnvironmentVariable { get; set; }
 
     /// <summary>
     /// How long to wait for the upstream to respond.
@@ -71,10 +81,10 @@ public sealed class ProviderOptions
     /// timeout to a stream would cut off exactly the slow, expensive completions that
     /// callers most want to finish.
     /// </remarks>
-    public int TimeoutSeconds { get; init; } = 100;
+    public int TimeoutSeconds { get; set; } = 100;
 
     /// <summary>Extra headers sent on every upstream request.</summary>
-    public IDictionary<string, string> Headers { get; init; } =
+    public IDictionary<string, string> Headers { get; set; } =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
@@ -95,27 +105,27 @@ public sealed class ProviderOptions
     /// saw. Gatehouse logs a warning at startup naming every provider this is enabled for.
     /// </para>
     /// </remarks>
-    public bool AllowPassthrough { get; init; }
+    public bool AllowPassthrough { get; set; }
 }
 
 /// <summary>Configuration for one model alias.</summary>
 public sealed class ModelRouteOptions
 {
     /// <summary>The key in <see cref="GatehouseOptions.Providers"/> that serves this alias.</summary>
-    public string Provider { get; init; } = string.Empty;
+    public string Provider { get; set; } = string.Empty;
 
     /// <summary>
     /// The model identifier to send upstream. Defaults to the alias itself, which is the
     /// common case when the caller already names a real model.
     /// </summary>
-    public string? UpstreamModel { get; init; }
+    public string? UpstreamModel { get; set; }
 
     /// <summary>
     /// Aliases to try in order if this route fails retryably. Fallback execution lands in
     /// Phase 1; the field is defined here so the configuration format does not have to
     /// change underneath early adopters.
     /// </summary>
-    public IList<string> Fallbacks { get; init; } = [];
+    public IList<string> Fallbacks { get; set; } = [];
 }
 
 /// <summary>Where Gatehouse persists request records.</summary>
@@ -129,21 +139,21 @@ public sealed class StoreOptions
     /// Redis. Adding a <em>required</em> external dependency needs an RFC under project
     /// governance; optional backends for shops that want them are welcome.
     /// </remarks>
-    public string ConnectionString { get; init; } = "Data Source=gatehouse.db";
+    public string ConnectionString { get; set; } = "Data Source=gatehouse.db";
 
     /// <summary>
     /// Whether to create and migrate the schema at startup. Air-gapped and
     /// least-privilege deployments turn this off and apply migrations out of band.
     /// </summary>
-    public bool AutoMigrate { get; init; } = true;
+    public bool AutoMigrate { get; set; } = true;
 }
 
 /// <summary>Observability configuration.</summary>
 public sealed class TelemetryOptions
 {
     /// <summary>The <c>service.name</c> reported to OpenTelemetry.</summary>
-    public string ServiceName { get; init; } = "gatehouse";
+    public string ServiceName { get; set; } = "gatehouse";
 
     /// <summary>An OTLP endpoint. When null, no OTLP exporter is registered.</summary>
-    public string? OtlpEndpoint { get; init; }
+    public string? OtlpEndpoint { get; set; }
 }

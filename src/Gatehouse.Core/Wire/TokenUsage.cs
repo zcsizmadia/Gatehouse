@@ -81,4 +81,25 @@ public sealed record TokenUsage
 
     /// <summary>Adds two usage records. Named alternative to <c>operator +</c>.</summary>
     public static TokenUsage Add(TokenUsage left, TokenUsage right) => left + right;
+
+    /// <summary>
+    /// Returns this usage marked as provider-reported.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Required because <see cref="IsProviderReported"/> is deliberately not on the wire — it
+    /// is Gatehouse bookkeeping, and emitting it would break clients that validate the OpenAI
+    /// response shape. The consequence is that usage deserialized from an upstream arrives
+    /// with the flag at its default of <see langword="false"/>, i.e. claiming to be estimated
+    /// when it is in fact the provider's own count.
+    /// </para>
+    /// <para>
+    /// Every provider must therefore call this on usage it parsed from an upstream response.
+    /// Forgetting to is not a crash: it silently downgrades authoritative billing data to
+    /// estimated, and the only symptom is a chargeback report that declines to vouch for
+    /// itself. <c>ChatCompletionsEndpointTests</c> covers it end to end for that reason.
+    /// </para>
+    /// </remarks>
+    public TokenUsage AsProviderReported() =>
+        IsProviderReported ? this : this with { IsProviderReported = true };
 }
