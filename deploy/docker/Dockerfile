@@ -61,6 +61,13 @@ RUN RID=$([ "$TARGETARCH" = "arm64" ] && echo linux-arm64 || echo linux-x64) \
       -p:VersionSuffix="$VERSION_SUFFIX" \
       --output /app
 
+# Staged here so the runtime stage can COPY it with the right ownership. The chiselled
+# runtime base has no shell, so `RUN mkdir` is not available there — and the directory has to
+# exist in the image, because Docker creates a missing volume mount point owned by root. The
+# gateway runs as an unprivileged user, so a root-owned data directory means SQLite cannot
+# open its file and the container fails its readiness probe on first start.
+RUN mkdir -p /staging/var/lib/gatehouse
+
 # ------------------------------------------------------------------------------
 # Runtime stage
 # ------------------------------------------------------------------------------
@@ -85,8 +92,14 @@ WORKDIR /app
 COPY --from=build --chown=app:app /app/gatehouse /app/gatehouse
 
 # SQLite is the default store and needs somewhere writable that survives a
-# restart. Declaring it a volume means an operator who forgets to mount one gets
-# an anonymous volume rather than a container that cannot record usage.
+# restart. The directory is copied in — rather than only declared as a volume —
+# so that it exists in the image owned by the unprivileged runtime user. Docker
+# propagates an existing mount point's ownership to a fresh volume; a mount point
+# that does not exist is created owned by root, which the gateway cannot write.
+COPY --from=build --chown=app:app /staging/var/lib/gatehouse /var/lib/gatehouse
+
+# Declaring the volume means an operator who forgets to mount one gets an
+# anonymous volume rather than a container that silently cannot record usage.
 VOLUME ["/var/lib/gatehouse"]
 
 ENV Gatehouse__Store__ConnectionString="Data Source=/var/lib/gatehouse/gatehouse.db" \
