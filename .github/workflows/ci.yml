@@ -199,6 +199,17 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Issue a virtual key inside the container
+        # Authentication is required by default and a gateway with no keys refuses to start, so
+        # this is a precondition rather than an extra. It also exercises the `keys` subcommand
+        # in the shipped image — which has no shell, so this is the only way to run it there and
+        # therefore worth proving works.
+        run: |
+          docker volume create gatehouse-ci-data
+          docker run --rm \
+            --volume gatehouse-ci-data:/var/lib/gatehouse \
+            gatehouse:ci keys create --name ci-smoke --org ci
+
       - name: Verify the image runs and reports ready
         # Deliberately no --rm: a container that exits on startup is removed immediately with
         # it, taking its logs — the only useful diagnostic — with it. That is exactly what
@@ -207,6 +218,7 @@ jobs:
         run: |
           docker run --detach --name gatehouse-ci \
             --publish 18080:8080 \
+            --volume gatehouse-ci-data:/var/lib/gatehouse \
             --env Gatehouse__Providers__stub__Kind=openai-compatible \
             --env Gatehouse__Providers__stub__BaseUrl=http://127.0.0.1:9/v1 \
             --env Gatehouse__Models__probe__Provider=stub \
@@ -242,6 +254,7 @@ jobs:
           docker logs gatehouse-ci 2>&1 || echo "(no logs available)"
           echo "::endgroup::"
           docker rm --force gatehouse-ci >/dev/null 2>&1 || true
+          docker volume rm --force gatehouse-ci-data >/dev/null 2>&1 || true
 
   # ---------------------------------------------------------------------------
   # The libraries are a shipped deliverable, not a by-product: a .NET 8 shop is

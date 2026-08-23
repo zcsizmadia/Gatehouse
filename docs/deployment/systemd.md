@@ -30,9 +30,28 @@ sudo install -m 0640 gatehouse.json /etc/gatehouse/gatehouse.json
 # 3. The unit
 sudo install -m 0644 gatehouse.service /etc/systemd/system/gatehouse.service
 
+# 4. The service account and its state directory.
+#
+#    A static system user rather than systemd's DynamicUser. The `gatehouse keys`
+#    command writes the same SQLite database the service reads, and a transient
+#    uid gives an administrator no way to run it as the owning identity — the key
+#    would land in a root-owned file the service then cannot write.
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin gatehouse || true
+sudo install -d -o gatehouse -g gatehouse -m 0700 /var/lib/gatehouse
+
+# 5. Issue a key, as the service user so the database ends up owned correctly.
+#    Authentication is required by default and the unit will fail to start without
+#    a key, rather than start and reject every request.
+sudo -u gatehouse /opt/gatehouse/gatehouse keys create \
+    --name my-app --org acme --team platform \
+    --config /etc/gatehouse/gatehouse.json
+
 sudo systemctl daemon-reload
 sudo systemctl enable --now gatehouse
 ```
+
+The secret is printed once. Only its hash is stored, so it cannot be recovered — if
+it is lost, revoke the key and issue another.
 
 Verify:
 
@@ -83,9 +102,14 @@ and opened its listener. A dependent unit ordered `After=gatehouse.service` can
 therefore rely on it. With `Type=simple` you would get a unit that is "active" while
 still rejecting requests.
 
-**`DynamicUser=yes`.** A transient, unprivileged user with no shell, no home and no
-login. `StateDirectory=gatehouse` gives it `/var/lib/gatehouse` at mode 0700, owned
-by that transient identity — which is where the SQLite request log lives.
+**A static `gatehouse` user, not `DynamicUser=yes`.** A transient uid would be the
+stronger hardening choice, and it was the original one. It loses to a practical
+concern: `gatehouse keys create` writes the same SQLite database the service reads,
+and with a transient identity there is nothing for an administrator to run that
+command as. The key would land in a root-owned file the service then cannot write,
+and the symptom would look like a corrupt database rather than a permissions
+mistake. `StateDirectory=gatehouse` still creates `/var/lib/gatehouse` at mode 0700
+owned by that user.
 
 **Sandboxing.** `ProtectSystem=strict`, `MemoryDenyWriteExecute`, an empty
 `CapabilityBoundingSet`, and `RestrictAddressFamilies=AF_INET AF_INET6`. A process

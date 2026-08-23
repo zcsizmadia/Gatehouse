@@ -37,25 +37,51 @@ public class ChatCompletionsEndpointTests
     [Test]
     public async Task Delivers_chunks_as_they_are_produced_rather_than_in_one_burst()
     {
-        // The assertion the whole streaming design exists for. If anything on the path
-        // buffers — the provider, the SSE writer, Kestrel — the text still arrives intact and
-        // every other test in this file still passes. Only the arrival *spacing* changes.
+        // The property the whole streaming design exists for. If anything on the path buffers,
+        // the text still arrives intact and every other test in this file still passes — only
+        // the *timing* changes.
+        //
+        // Measured server-side, from the gateway's own time-to-first-chunk, rather than from
+        // inter-chunk arrival times at the client. Client-observed spacing cannot distinguish
+        // gateway buffering from client scheduling: if the test task is descheduled between
+        // receiving response headers and reading the body, the socket buffer accumulates the
+        // whole stream and the observed spacing collapses to nothing for a perfectly healthy
+        // gateway. That made the previous version of this test flaky under parallel load.
+        //
+        // Time to first chunk is recorded inside the gateway after the flush completes, so it
+        // is immune to client scheduling and still catches a provider or SSE-writer that
+        // accumulates before writing.
         await using FakeUpstream upstream = await FakeUpstream.StartAsync();
-        upstream.Chunks = ["one", "two", "three"];
+        upstream.Chunks = ["one", "two", "three", "four"];
         upstream.ChunkDelay = TimeSpan.FromMilliseconds(200);
 
         await using GatehouseHost gateway = await GatehouseHost.StartAsync(upstream.BaseAddress);
 
         StreamedCompletion result = await ReadStreamAsync(gateway, "gpt-4o-mini");
+        await Assert.That(result.Text).IsEqualTo("onetwothreefour");
 
-        await Assert.That(result.ChunkOffsets.Count).IsGreaterThanOrEqualTo(3);
+        RequestRecord record = await WaitForRecordAsync(gateway);
+        await Assert.That(record.TimeToFirstChunk).IsNotNull();
 
-        TimeSpan spread = result.ChunkOffsets[^1] - result.ChunkOffsets[0];
+        // How much of the request happened *after* the first chunk was flushed.
+        //
+        // Expressed as an interval rather than a ratio of the total, because the total includes
+        // fixed overhead — routing, the upstream connection — that varies hugely with machine
+        // load. A ratio test failed on a Windows runner at 475 ms / 907 ms: both numbers were
+        // inflated by ~275 ms of setup, which pushed the ratio past a half even though the
+        // stream was working perfectly. Subtracting cancels that overhead entirely.
+        //
+        // Four chunks at 200 ms means roughly 600 ms should elapse after the first one. A
+        // gateway that buffered would flush nothing until the upstream finished, leaving this
+        // interval at approximately zero — so the two cases are separated by the whole
+        // measurement, not by a threshold that has to be tuned.
+        TimeSpan afterFirstChunk = record.Duration - record.TimeToFirstChunk!.Value;
+        await Assert.That(afterFirstChunk).IsGreaterThan(TimeSpan.FromMilliseconds(300));
 
-        // Two 200 ms gaps separate the first and last chunk upstream. A buffering regression
-        // collapses that spread to near zero; 250 ms leaves generous room for scheduling noise
-        // while still failing decisively if the stream is batched.
-        await Assert.That(spread).IsGreaterThan(TimeSpan.FromMilliseconds(250));
+        // Each chunk must also be its own SSE frame. One frame containing everything would mean
+        // the relay concatenated the stream before writing it, which the timing check above
+        // would not notice.
+        await Assert.That(result.ChunkOffsets.Count).IsGreaterThanOrEqualTo(4);
     }
 
     [Test]
@@ -123,16 +149,22 @@ public class ChatCompletionsEndpointTests
             upstream.BaseAddress,
             apiKey: "the-real-upstream-key");
 
+        // The caller presents its own Gatehouse virtual key — a real, valid one, since the
+        // gateway now requires authentication. The upstream must still see the provider
+        // credential and nothing of the caller's.
         using HttpRequestMessage request = StreamRequest("gpt-4o-mini");
-        request.Headers.Add("Authorization", "Bearer gh-sk-caller-virtual-key");
 
         using HttpResponseMessage response = await gateway.Client.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead);
         await response.Content.ReadAsStringAsync();
 
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
         await Assert.That(upstream.LastAuthorization).IsEqualTo("Bearer the-real-upstream-key");
-        await Assert.That(upstream.LastAuthorization!).DoesNotContain("gh-sk-caller-virtual-key");
+
+        // The virtual key must not reach the provider. A gateway that forwarded it would be a
+        // credential relay rather than a boundary.
+        await Assert.That(upstream.LastAuthorization!).DoesNotContain(gateway.VirtualKeySecret!);
     }
 
     [Test]

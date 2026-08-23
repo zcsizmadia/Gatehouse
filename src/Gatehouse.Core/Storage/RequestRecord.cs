@@ -69,4 +69,24 @@ public sealed record RequestRecord
 
     /// <summary>The error class, when the request failed. Null on success.</summary>
     public string? ErrorType { get; init; }
+
+    /// <summary>
+    /// The virtual key that authorised the request, or null when authentication is disabled.
+    /// </summary>
+    public string? VirtualKeyId { get; init; }
+
+    /// <summary>The organisation the key belonged to at the time of the request.</summary>
+    /// <remarks>
+    /// Denormalised onto the record rather than joined from the key, and deliberately so. Keys
+    /// get relabelled — an application moves between teams — and a chargeback report for last
+    /// quarter must attribute spend to whoever owned it <em>then</em>, not to whoever owns the
+    /// key now. Joining would silently rewrite history every time a label changed.
+    /// </remarks>
+    public string? Organisation { get; init; }
+
+    /// <summary>The team the key belonged to at the time of the request.</summary>
+    public string? Team { get; init; }
+
+    /// <summary>The application the key belonged to at the time of the request.</summary>
+    public string? Application { get; init; }
 }
