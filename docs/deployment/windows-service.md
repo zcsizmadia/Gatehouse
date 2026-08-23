@@ -11,16 +11,27 @@ Phase 0 gate.
 
 ## Install
 
-From an **elevated** PowerShell session, with `gatehouse.exe` and the install
-script in the same directory:
+Extract the release archive somewhere permanent — `gatehouse.exe` is accompanied by
+the SQLite native library it loads from its own directory, so keep the extracted
+contents together and do not copy the executable out on its own. Then, from an
+**elevated** PowerShell session:
 
 ```powershell
+Expand-Archive .\gatehouse-win-x64.zip -DestinationPath 'C:\Program Files\Gatehouse'
+
 New-Item -ItemType Directory -Force C:\ProgramData\Gatehouse | Out-Null
 Copy-Item .\gatehouse.json C:\ProgramData\Gatehouse\gatehouse.json
 
-.\Install-GatehouseService.ps1 -ConfigPath C:\ProgramData\Gatehouse\gatehouse.json
+.\Install-GatehouseService.ps1 `
+  -BinaryPath 'C:\Program Files\Gatehouse\gatehouse.exe' `
+  -ConfigPath C:\ProgramData\Gatehouse\gatehouse.json
+
 Start-Service -Name Gatehouse
 ```
+
+If you install only the executable, the service starts, reports `Running`, and then
+fails every request with `DllNotFoundException` — the request log cannot open its
+database because the native library is not there.
 
 Verify:
 
@@ -113,7 +124,7 @@ sc.exe qfailure Gatehouse
 
 ```powershell
 Stop-Service -Name Gatehouse
-Copy-Item .\gatehouse.exe 'C:\Program Files\Gatehouse\gatehouse.exe' -Force
+Expand-Archive .\gatehouse-win-x64.zip -DestinationPath 'C:\Program Files\Gatehouse' -Force
 Start-Service -Name Gatehouse
 ```
 

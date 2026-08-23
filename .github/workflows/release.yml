@@ -84,9 +84,30 @@ jobs:
 
       - name: Stage artifact
         shell: bash
+        # An archive, not a bare executable. NativeAOT does not statically link the SQLite
+        # native library, so the executable ships alongside e_sqlite3; publishing the
+        # executable on its own would hand every user something that starts and then throws
+        # DllNotFoundException on the first request. Debug symbols are excluded from the
+        # archive and published separately below.
         run: |
+          set -euo pipefail
+          rm -f ./publish/*.dbg ./publish/*.pdb
+
+          if ! ls ./publish | grep -Eq 'e_sqlite3'; then
+            echo "::error::the SQLite native library is missing from the publish output"
+            exit 1
+          fi
+
           mkdir -p staging
-          cp "./publish/${{ matrix.exe }}" "staging/gatehouse-${{ matrix.rid }}${{ runner.os == 'Windows' && '.exe' || '' }}"
+          name="gatehouse-${{ matrix.rid }}"
+
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            (cd ./publish && 7z a -tzip "../staging/${name}.zip" .) > /dev/null
+          else
+            tar -czf "staging/${name}.tar.gz" -C ./publish .
+          fi
+
+          ls -lh staging
 
       - uses: actions/upload-artifact@v4
         with:

@@ -49,15 +49,15 @@ later. Each release includes:
 
 Verify the Sigstore signature and its provenance identity:
 
-    cosign verify-blob gatehouse-linux-x64 \
-      --bundle gatehouse-linux-x64.sigstore.json \
+    cosign verify-blob gatehouse-linux-x64.tar.gz \
+      --bundle gatehouse-linux-x64.tar.gz.sigstore.json \
       --certificate-identity-regexp "^https://github.com/zcsizmadia/Gatehouse/.github/workflows/release.yml@refs/tags/v.*$" \
       --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 Verify the SLSA provenance:
 
-    slsa-verifier verify-artifact gatehouse-linux-x64 \
-      --provenance-path gatehouse-linux-x64.intoto.jsonl \
+    slsa-verifier verify-artifact gatehouse-linux-x64.tar.gz \
+      --provenance-path gatehouse-linux-x64.tar.gz.intoto.jsonl \
       --source-uri github.com/zcsizmadia/Gatehouse
 
 If verification fails, treat the artifact as compromised and tell us.

@@ -148,11 +148,27 @@ jobs:
         # streamed completion from a stub upstream, and assert the chunks arrive.
         run: bash ./.github/scripts/smoke-test.sh "${{ github.workspace }}/publish/${{ matrix.exe }}"
 
-      - name: Upload binary
+      - name: Verify the publish output is complete
+        shell: bash
+        # NativeAOT does not statically link the SQLite native library, so the executable is
+        # accompanied by e_sqlite3. Shipping the executable alone yields something that starts,
+        # answers a health probe, and then throws DllNotFoundException the first time anything
+        # touches the request log — which is every request. Assert the companion is present so
+        # a packaging change cannot quietly drop it again.
+        run: |
+          cd "${{ github.workspace }}/publish"
+          ls -la
+          if ! ls | grep -Eq 'e_sqlite3'; then
+            echo "::error::the SQLite native library is missing from the publish output"
+            exit 1
+          fi
+
+      - name: Upload publish output
         uses: actions/upload-artifact@v4
+        # The whole directory, not just the executable: see the verification step above.
         with:
           name: gatehouse-${{ matrix.rid }}
-          path: ${{ github.workspace }}/publish/${{ matrix.exe }}
+          path: ${{ github.workspace }}/publish/
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------

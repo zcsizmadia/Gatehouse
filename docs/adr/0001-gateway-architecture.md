@@ -130,7 +130,7 @@ the easiest to reintroduce.
 
 ## Consequences
 
-**Good.** One binary, three hosts, no runtime to install. Governance has a place to
+**Good.** One build, three hosts, no runtime to install. Governance has a place to
 live from the start. AOT and metering accuracy are enforced by CI rather than by
 discipline.
 

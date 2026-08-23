@@ -20,9 +20,9 @@ Phase 0 — Foundations.
   states the threat model rather than only an inbox.
 - Architecture spike: an OpenAI-compatible `/v1/chat/completions` endpoint with
   server-sent-event streaming, proxying to a configurable upstream.
-- NativeAOT single-file publish for `linux-x64`, `linux-arm64`, `win-x64` and
+- Self-contained NativeAOT publish for `linux-x64`, `linux-arm64`, `win-x64` and
   `osx-arm64`.
-- One binary, three hosts: Windows Service, systemd notify, and container.
+- One build, three hosts: Windows Service, systemd notify, and container.
 - SQLite as the default zero-dependency store.
 - OpenTelemetry tracing, metrics and logs following the GenAI semantic
   conventions.

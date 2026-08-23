@@ -36,9 +36,10 @@ comes, comes from support and hosting — never from features.
 
 Three more things follow from being a .NET project rather than a Python one:
 
-- **One binary.** NativeAOT single-file executable. No interpreter, no virtualenv,
-  no sidecar. Runs as a Windows Service, a systemd unit, or a distroless container
-  from the same build.
+- **One executable.** NativeAOT, self-contained. No .NET runtime to install, no
+  interpreter, no virtualenv, no sidecar — just the executable and the SQLite
+  native library beside it. Runs as a Windows Service, a systemd unit, or a
+  distroless container from the same build.
 - **SQLite by default.** A working deployment needs no Postgres and no Redis. Scale
   out when you need to, not to get started.
 - **Entra-native.** Managed identity to Azure OpenAI, OIDC SSO, AD-group RBAC —

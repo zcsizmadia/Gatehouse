@@ -3,7 +3,7 @@
 # ==============================================================================
 # Gatehouse container image.
 #
-# Produces a NativeAOT single binary on a chiselled base: no .NET runtime, no
+# Produces a self-contained NativeAOT executable on a chiselled base: no .NET runtime, no
 # shell, no package manager. The result is a few tens of megabytes with almost
 # nothing in it for a scanner to find, which is most of the reason a .NET gateway
 # is worth building at all.
@@ -28,10 +28,11 @@ WORKDIR /src
 # Restore before copying sources so a source-only change does not re-download the
 # package graph. Central Package Management means one file holds every version,
 # which makes this layer stable.
-# .editorconfig is not optional here. It carries the analyzer severity settings, and
-# TreatWarningsAsErrors is on repository-wide — without it the container build fails on
-# diagnostics that the local and CI builds correctly suppress, which is a confusing way to
-# discover that a file was missing from the build context.
+#
+# .editorconfig belongs in this list and is easy to leave out. It carries the analyzer
+# severity settings, and TreatWarningsAsErrors is on repository-wide, so without it the
+# container build fails on diagnostics the local and CI builds deliberately suppress —
+# a confusing way to discover that a file was missing from the build context.
 COPY global.json Directory.Build.props Directory.Build.targets Directory.Packages.props NuGet.config .editorconfig ./
 COPY src/Gatehouse.Core/Gatehouse.Core.csproj                             src/Gatehouse.Core/
 COPY src/Gatehouse.Providers.OpenAI/Gatehouse.Providers.OpenAI.csproj     src/Gatehouse.Providers.OpenAI/
@@ -68,6 +69,17 @@ RUN RID=$([ "$TARGETARCH" = "arm64" ] && echo linux-arm64 || echo linux-x64) \
 # open its file and the container fails its readiness probe on first start.
 RUN mkdir -p /staging/var/lib/gatehouse
 
+# Drop debug artifacts, then keep everything else.
+#
+# "Single binary" is very nearly true and not quite: NativeAOT does not statically link the
+# SQLite native library, so libe_sqlite3.so sits beside the executable and is loaded by
+# P/Invoke at first use. Copying only the executable produces an image that starts, passes a
+# port check, and then dies with DllNotFoundException the moment anything touches the request
+# log. Copy the publish directory as a whole so a future native dependency cannot reintroduce
+# the same failure.
+RUN rm -f /app/*.dbg /app/*.pdb
+
+
 # ------------------------------------------------------------------------------
 # Runtime stage
 # ------------------------------------------------------------------------------
@@ -89,7 +101,7 @@ LABEL org.opencontainers.image.title="Gatehouse" \
 USER app
 WORKDIR /app
 
-COPY --from=build --chown=app:app /app/gatehouse /app/gatehouse
+COPY --from=build --chown=app:app /app/ /app/
 
 # SQLite is the default store and needs somewhere writable that survives a
 # restart. The directory is copied in — rather than only declared as a volume —

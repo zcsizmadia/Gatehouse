@@ -1,14 +1,27 @@
 # Deploying Gatehouse as a systemd unit
 
-Gatehouse ships as a single NativeAOT binary. There is no runtime to install, no
-virtualenv, and no wrapper process — the binary speaks the systemd notify protocol
-itself, so systemd knows when it is genuinely ready rather than merely running.
+Gatehouse ships as a self-contained NativeAOT executable. There is no runtime to
+install, no virtualenv, and no wrapper process — the binary speaks the systemd notify
+protocol itself, so systemd knows when it is genuinely ready rather than merely
+running.
+
+It is installed to `/opt/gatehouse` rather than `/usr/local/bin`, because the
+executable is accompanied by the SQLite native library it loads from its own
+directory. Keeping the pair together is the whole reason for the directory.
 
 ## Install
 
 ```bash
-# 1. The binary
-sudo install -m 0755 gatehouse-linux-x64 /usr/local/bin/gatehouse
+# 1. The executable and its native SQLite companion, kept together.
+#
+#    Extract the whole archive rather than picking out the executable. NativeAOT
+#    does not statically link the SQLite native library, so gatehouse loads
+#    libe_sqlite3.so from its own directory at first use. Installing only the
+#    executable gives you a service that starts, reports healthy, and then fails
+#    every request with DllNotFoundException.
+sudo mkdir -p /opt/gatehouse
+sudo tar -xzf gatehouse-linux-x64.tar.gz -C /opt/gatehouse
+sudo chmod 0755 /opt/gatehouse/gatehouse
 
 # 2. Configuration
 sudo mkdir -p /etc/gatehouse
@@ -117,7 +130,7 @@ Environment=ASPNETCORE_URLS=http://10.0.0.5:8080
 
 ```bash
 sudo systemctl stop gatehouse
-sudo install -m 0755 gatehouse-linux-x64 /usr/local/bin/gatehouse
+sudo tar -xzf gatehouse-linux-x64.tar.gz -C /opt/gatehouse
 sudo systemctl start gatehouse
 ```
 
@@ -136,7 +149,7 @@ records are flushed before the process exits.
 sudo systemctl disable --now gatehouse
 sudo rm /etc/systemd/system/gatehouse.service
 sudo systemctl daemon-reload
-sudo rm /usr/local/bin/gatehouse
+sudo rm -rf /opt/gatehouse
 ```
 
 `/var/lib/gatehouse` is left alone on purpose: it holds usage and audit history.
