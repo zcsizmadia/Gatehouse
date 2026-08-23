@@ -62,28 +62,88 @@ Verify the SLSA provenance:
 
 If verification fails, treat the artifact as compromised and tell us.
 
+## What is actually implemented
+
+Gatehouse is pre-1.0 and mid-Phase-1. This table is the authoritative answer to
+"can I rely on X yet", and it is deliberately placed above the threat model so
+that nobody reads a design intention as a shipped control.
+
+**If a capability is not marked ✅ here, do not include it in your own threat
+model.**
+
+| Capability | Status | Notes |
+| ---------- | ------ | ----- |
+| **Authentication** | | |
+| Virtual keys (`Authorization: Bearer gh-sk-…`) | ✅ | SHA-256 hashed; the secret is never stored |
+| Immediate revocation | ✅ | Recorded, not deleted |
+| Key expiry | ✅ | Optional per key |
+| Refuses to start with no usable key | ✅ | When `Authentication.Mode` is `Required` |
+| OIDC / SSO (Entra ID, Okta) | ❌ Phase 2 | No interactive or federated identity at all |
+| SCIM provisioning | ❌ Phase 2 | |
+| mTLS to the gateway | ❌ Not planned yet | |
+| **Authorisation** | | |
+| Per-key model allowlists | ❌ Phase 2 | **Any valid key may call any configured model** |
+| Hierarchical budgets and spend enforcement | ❌ Phase 2 | **No spend limit of any kind is enforced** |
+| RBAC / roles | ❌ Phase 2 | There are no roles; all keys are equivalent |
+| Rate limiting or quotas | ❌ Phase 2 | |
+| Approval workflow for models | ❌ Phase 2 | |
+| **Audit and attribution** | | |
+| Every request recorded | ✅ | Including failures and rejected requests |
+| Attribution to org / team / application | ✅ | Captured at request time, so relabelling a key does not rewrite history |
+| Applications cannot write the log | ✅ | It is server-side, not client-reported |
+| Tamper-evident audit log | ❌ Phase 2 | Ordinary SQLite rows; anyone with database access can alter them |
+| **Data protection** | | |
+| Prompt and completion text never persisted | ✅ | The request log stores counts and metadata only |
+| Message content off telemetry by default | ✅ | Content capture is not implemented at all yet |
+| PII detection and redaction | ❌ Phase 2 | Presidio-based, not started |
+| **Credentials** | | |
+| Provider keys from environment variables | ✅ | Warns loudly if a literal key is in config |
+| Azure Entra managed identity | ✅ | Stores no credential at all — the best available option |
+| Key Vault / Secrets Manager / Vault integration | ❌ Not planned yet | Use the environment or managed identity |
+| **Transport** | | |
+| TLS termination in-process | ❌ By design | Terminate in front; see hardening guidance below |
+| **Supply chain** | | |
+| Signed releases, SBOM, SLSA provenance | ✅ | See below |
+| Dependencies pinned by digest or commit SHA | ✅ | |
+| Third-party security audit | ❌ Phase 4 | |
+
 ## Threat model
 
-Gatehouse's own security posture, stated plainly so you can check our work.
+Stated plainly so you can check our work, and scoped to what is implemented today
+rather than to what is planned.
 
-**What Gatehouse defends against**
+**What Gatehouse defends against today**
 
-- Provider API keys leaking to client applications — clients hold virtual keys
-  and never see upstream credentials.
-- A compromised client exhausting an organisation's spend — budgets are enforced
-  server-side, before the upstream call.
-- Untracked model usage — every request is recorded in an audit log that the
-  requesting application cannot write to.
+- Provider API keys leaking to client applications. Clients hold a virtual key
+  and never see an upstream credential; the gateway strips the caller's
+  `Authorization` header and substitutes its own.
+- An individual application being cut off without collateral damage. Revoking one
+  virtual key stops it immediately, without rotating a provider credential shared
+  by everyone else.
+- Untracked usage. Every request is recorded server-side, including rejected ones,
+  attributed to the key that made it. The requesting application cannot write to
+  or suppress that record.
+- Unauthenticated access to the inference surface, when
+  `Authentication.Mode` is `Required` — which is the default, and which refuses to
+  start rather than accepting connections it would reject.
 
-**What Gatehouse does not defend against**
+**What Gatehouse does not defend against — including things it eventually will**
 
-- A compromised Gatehouse host. It holds provider credentials; treat the host as
-  a secrets-bearing tier and isolate it accordingly.
-- Prompt injection reaching the model. Gatehouse can redact and can block on
-  policy, but it is not a semantic firewall and will not claim to be.
+- **Overspending. There is no budget enforcement yet.** A valid key can spend
+  without limit until Phase 2. If that matters to you, cap it at the provider.
+- **Privilege separation between keys. There is none yet.** Any valid key can call
+  any configured model, including the most expensive one. Do not issue keys to
+  callers you would not grant full access to.
+- Audit-log tampering by anyone with database access. The log is ordinary SQLite
+  rows; it is append-only by construction, not by enforcement.
+- A compromised Gatehouse host. It holds provider credentials; treat the host as a
+  secrets-bearing tier and isolate it accordingly.
+- Prompt injection reaching the model. Gatehouse is not a semantic firewall and
+  will not claim to be. Redaction and policy blocking arrive in Phase 2; neither
+  exists today.
 - Malicious models. Gatehouse governs access, not model behaviour.
-- Denial of service against upstream providers by an authorised, in-budget
-  caller. Rate limits mitigate; they do not eliminate.
+- Denial of service against an upstream provider by an authorised caller. There is
+  no rate limiting yet.
 
 ## Hardening guidance
 
