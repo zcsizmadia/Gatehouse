@@ -10,12 +10,21 @@
 #
 # Build from the repository root, not from this directory:
 #     docker build -f deploy/docker/Dockerfile -t gatehouse:dev .
+#
+# Base images are pinned by digest rather than by tag. A tag is a mutable pointer, so
+# "the image we tested" and "the image we shipped" can differ silently — which is the
+# gap the SBOM and provenance in SECURITY.md exist to close. Both digests are for the
+# multi-arch manifest list, so per-platform resolution still works.
+#
+# Pinning does not mean falling behind on base-image patches: Dependabot is configured
+# for the docker ecosystem, so digest bumps arrive as reviewable pull requests instead
+# of arriving invisibly.
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
 # Build stage
 # ------------------------------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c AS build
 
 # NativeAOT links with clang and needs the zlib headers. The SDK image does not
 # ship them, and the failure without them is a linker error late in the build.
@@ -86,7 +95,7 @@ RUN rm -f /app/*.dbg /app/*.pdb
 # runtime-deps rather than aspnet: the binary is self-contained, so all this base
 # provides is libc and the TLS stack. "chiselled" strips the shell and package
 # manager; InvariantGlobalization=true in the project means ICU is not needed.
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled AS runtime
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled@sha256:afd8faf9aca00ee69b44b33631665e654e2423e143b6362dffe52c006cd7c4e6 AS runtime
 
 # OCI labels, so `docker inspect` answers the provenance questions an auditor asks.
 LABEL org.opencontainers.image.title="Gatehouse" \

@@ -342,7 +342,15 @@ public class ChatCompletionsEndpointTests
                 sse.Data,
                 GatehouseJsonContext.Default.ChatCompletionChunk);
 
-            if (chunk?.Choices.Count > 0 && chunk.Choices[0].Delta.Content is { } content)
+            // Spelled out rather than written as `chunk?.Choices.Count > 0 && chunk.Choices[0]…`.
+            // That form is correct — the compiler narrows chunk in the second operand — but it
+            // reads as an unguarded dereference to both a human and a static analyser.
+            if (chunk is null || chunk.Choices.Count == 0)
+            {
+                continue;
+            }
+
+            if (chunk.Choices[0].Delta.Content is { } content)
             {
                 text.Append(content);
             }
