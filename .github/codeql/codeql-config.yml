@@ -1,18 +1,12 @@
 name: Gatehouse CodeQL configuration
 
-# Gatehouse leans heavily on source generators — System.Text.Json for serialization and
-# Microsoft.Extensions.Configuration.Binder for options binding — because that is what makes
-# the NativeAOT build possible. The generated output lands under obj/ and gets picked up by
-# the C# extractor along with the real sources.
+# Build output is never hand-authored, so there is nothing in it worth analysing and plenty
+# in it worth not analysing — generator output in particular.
 #
-# Analysing it is worse than useless. The binder generator emits patterns CodeQL correctly
-# flags (self-assignment, for instance), we cannot change them, and nine such alerts are
-# enough to bury a genuine finding in our own code. Excluding generated output keeps the
-# results actionable, which is the only property that makes a scanner worth running.
-#
-# This does NOT reduce coverage of anything we write: obj/ and bin/ contain no hand-authored
-# code, and the generators' *inputs* — our partial classes and options types — are analysed
-# normally.
+# Note that paths-ignore is NOT honoured for compiled languages, so this does not do the work
+# for C#; the csharp job uses build-mode: none for that, and the reasoning is recorded in
+# .github/workflows/codeql.yml. These exclusions matter for the python and actions analyses,
+# and act as belt-and-braces should the C# job ever move back to a traced build.
 paths-ignore:
   - '**/obj/**'
   - '**/bin/**'

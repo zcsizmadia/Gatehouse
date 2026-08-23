@@ -179,8 +179,12 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Verify the image runs and reports ready
+        # Deliberately no --rm: a container that exits on startup is removed immediately with
+        # it, taking its logs — the only useful diagnostic — with it. That is exactly what
+        # happens in the failure case this check exists to catch, so the container is kept and
+        # removed explicitly in the cleanup step below.
         run: |
-          docker run --rm --detach --name gatehouse-ci \
+          docker run --detach --name gatehouse-ci \
             --publish 18080:8080 \
             --env Gatehouse__Providers__stub__Kind=openai-compatible \
             --env Gatehouse__Providers__stub__BaseUrl=http://127.0.0.1:9/v1 \
@@ -189,17 +193,34 @@ jobs:
 
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:18080/health/ready; then
-              echo "gatehouse reported ready"
-              docker rm --force gatehouse-ci
+              echo "gatehouse reported ready after ${attempt}s"
               exit 0
             fi
+
+            # An exited container will never become ready. Fail now so the logs are the first
+            # thing in the output rather than the last thing after a 30-second wait.
+            state=$(docker inspect --format '{{.State.Status}}' gatehouse-ci 2>/dev/null || echo missing)
+            if [ "$state" != "running" ]; then
+              echo "::error::container is '$state' rather than running"
+              exit 1
+            fi
+
             sleep 1
           done
 
-          echo "gatehouse did not become ready" >&2
-          docker logs gatehouse-ci >&2 || true
-          docker rm --force gatehouse-ci
+          echo "::error::gatehouse did not report ready within 30 seconds"
           exit 1
+
+      - name: Container diagnostics
+        if: always()
+        run: |
+          echo "::group::docker inspect"
+          docker inspect --format 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' gatehouse-ci || true
+          echo "::endgroup::"
+          echo "::group::container logs"
+          docker logs gatehouse-ci 2>&1 || echo "(no logs available)"
+          echo "::endgroup::"
+          docker rm --force gatehouse-ci >/dev/null 2>&1 || true
 
   # ---------------------------------------------------------------------------
   # The libraries are a shipped deliverable, not a by-product: a .NET 8 shop is
