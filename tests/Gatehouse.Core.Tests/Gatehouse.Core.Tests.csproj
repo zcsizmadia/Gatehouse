@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Tests run against every framework the libraries claim to support. Multi-targeting
+         that nothing exercises is a promise, not a guarantee. -->
+    <TargetFrameworks>$(GatehouseLibraryTargetFrameworks)</TargetFrameworks>
+    <RootNamespace>Gatehouse.Tests</RootNamespace>
+
+    <!-- TUnit runs on Microsoft.Testing.Platform: the test assembly is its own executable
+         rather than something a VSTest host reflects over. That is why it works under
+         NativeAOT, which is why Gatehouse uses it. The runner is selected repo-wide in
+         dotnet.config. -->
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Gatehouse.Core\Gatehouse.Core.csproj" />
+    <ProjectReference Include="..\..\src\Gatehouse.Storage.Sqlite\Gatehouse.Storage.Sqlite.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+
+</Project>

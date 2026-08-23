@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>$(GatehouseLibraryTargetFrameworks)</TargetFrameworks>
+    <RootNamespace>Gatehouse.Storage.Sqlite</RootNamespace>
+    <IsPackable>true</IsPackable>
+    <PackageId>Gatehouse.Storage.Sqlite</PackageId>
+    <Description>
+      The default Gatehouse request-log store. SQLite keeps a working deployment free of any
+      external database: no Postgres, no Redis, no migration job.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Gatehouse.Core\Gatehouse.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Gatehouse.Core.Tests" />
+    <InternalsVisibleTo Include="Gatehouse.Server.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>$(GatehouseLibraryTargetFrameworks)</TargetFrameworks>
+    <RootNamespace>Gatehouse</RootNamespace>
+    <IsPackable>true</IsPackable>
+    <PackageId>Gatehouse.Core</PackageId>
+    <Description>
+      Core abstractions for Gatehouse: the OpenAI-compatible wire contract, the
+      provider interface, model routing, and telemetry. Reference this package to
+      build a Gatehouse provider or to consume its types from your own host.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+
+  <!-- System.Text.Json ships in the shared framework from net10.0 onward, where referencing
+       the package explicitly is an error (NU1510). The older targets need it for the
+       source-generator behaviour the wire contract depends on. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0' OR '$(TargetFramework)' == 'net9.0'">
+    <PackageReference Include="System.Text.Json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Gatehouse.Core.Tests" />
+    <InternalsVisibleTo Include="Gatehouse.Server" />
+    <InternalsVisibleTo Include="Gatehouse.Server.Tests" />
+    <InternalsVisibleTo Include="Gatehouse.Benchmarks" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/bench/">
+    <Project Path="bench/Gatehouse.Benchmarks/Gatehouse.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Gatehouse.Core/Gatehouse.Core.csproj" />
+    <Project Path="src/Gatehouse.Providers.OpenAI/Gatehouse.Providers.OpenAI.csproj" />
+    <Project Path="src/Gatehouse.Server/Gatehouse.Server.csproj" />
+    <Project Path="src/Gatehouse.Storage.Sqlite/Gatehouse.Storage.Sqlite.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Gatehouse.Core.Tests/Gatehouse.Core.Tests.csproj" />
+    <Project Path="tests/Gatehouse.Server.Tests/Gatehouse.Server.Tests.csproj" />
+  </Folder>
+</Solution>

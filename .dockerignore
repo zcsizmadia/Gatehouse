@@ -1,0 +1,39 @@
+# Keep the build context small and reproducible. Anything that could differ
+# between a developer machine and CI is excluded, so a local `docker build`
+# produces the same layers as the release pipeline.
+
+**/bin/
+**/obj/
+**/out/
+artifacts/
+BenchmarkDotNet.Artifacts/
+
+.git/
+.github/
+.vs/
+.vscode/
+.idea/
+
+tests/
+bench/
+docs/
+
+**/TestResults/
+**/*.trx
+**/*.db
+**/*.db-shm
+**/*.db-wal
+
+# Never let a local secret or override reach the image.
+**/appsettings.Local.json
+**/appsettings.*.Local.json
+**/secrets.json
+.env
+.env.*
+**/*.pfx
+**/*.p12
+
+**/*.user
+**/*.binlog
+.DS_Store
+Thumbs.db

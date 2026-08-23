@@ -1,0 +1,70 @@
+<Project>
+
+  <!-- ============================================================
+       Central Package Management.
+
+       Every version in the repository lives here. A pull request that bumps a
+       dependency touches exactly one file, which is what makes the supply-chain
+       review story (Dependabot + SBOM diff) legible to an auditor.
+
+       Microsoft.Extensions.* 10.x packages multi-target net8.0/net9.0/net10.0,
+       so libraries on the older TFMs consume the same version as the apps.
+       Microsoft.AspNetCore.* packages ship with the shared framework and are
+       referenced only from net10.0 applications.
+       ============================================================ -->
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Label="Reverse proxy">
+    <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="AI abstractions">
+    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.9.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.9.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Runtime extensions">
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.9.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.11" />
+    <PackageVersion Include="System.Text.Json" Version="10.0.11" />
+  </ItemGroup>
+
+  <ItemGroup Label="Persistence — SQLite is the zero-dependency default store">
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+  </ItemGroup>
+
+  <ItemGroup Label="Telemetry — OpenTelemetry GenAI semantic conventions">
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Command line">
+    <PackageVersion Include="System.CommandLine" Version="2.0.11" />
+  </ItemGroup>
+
+  <ItemGroup Label="Testing">
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.9.0" />
+    <PackageVersion Include="NSubstitute" Version="6.2.0" />
+    <PackageVersion Include="TUnit" Version="1.65.38" />
+  </ItemGroup>
+
+  <ItemGroup Label="Benchmarking">
+    <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,17 @@
+name: Gatehouse CodeQL configuration
+
+# Build output is never hand-authored, so there is nothing in it worth analysing and plenty
+# in it worth not analysing — generator output in particular.
+#
+# Note that paths-ignore is NOT honoured for compiled languages, so this does not do the work
+# for C#; the csharp job uses build-mode: none for that, and the reasoning is recorded in
+# .github/workflows/codeql.yml. These exclusions matter for the python and actions analyses,
+# and act as belt-and-braces should the C# job ever move back to a traced build.
+paths-ignore:
+  - '**/obj/**'
+  - '**/bin/**'
+  - '**/*.g.cs'
+  - '**/*.Designer.cs'
+
+queries:
+  - uses: security-and-quality

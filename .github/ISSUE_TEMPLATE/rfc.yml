@@ -1,0 +1,67 @@
+name: RFC / feature proposal
+description: Propose a change that needs discussion before code.
+labels: [rfc, needs-triage]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gatehouse says no to more than it says yes to, and that is deliberate — see
+        [scope discipline](https://github.com/zcsizmadia/Gatehouse/blob/main/GOVERNANCE.md#scope-discipline).
+        An issue costs you ten minutes; a rejected pull request costs you a weekend.
+
+        Some changes **require** this process: adding a provider, changing the wire-compatible
+        API after v1.0, adding a required runtime dependency, or amending GOVERNANCE.md. Those
+        get a minimum 7-day comment period and a maintainer majority.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: |
+        What cannot be done today, and what it costs whoever hits it. Please describe the
+        problem rather than the solution — the best proposals often get solved differently.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Including doing nothing. Why is this the right shape?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: category
+    attributes:
+      label: Does this touch any of these?
+      options:
+        - label: Adds a provider (the count is capped at seven; needs a maintainer who commits to owning it)
+        - label: Adds a required runtime dependency — a database, a cache, a message broker
+        - label: Changes the OpenAI-compatible wire surface
+        - label: Touches a governance feature (budgets, SSO, RBAC, audit, redaction, allowlists)
+        - label: Changes GOVERNANCE.md
+
+  - type: textarea
+    id: governance
+    attributes:
+      label: If this touches a governance feature
+      description: |
+        Confirm the capability stays free and open. No governance feature will ever move behind
+        a paywall — that commitment is permanent.
+
+  - type: textarea
+    id: ownership
+    attributes:
+      label: Are you offering to implement it?
+      description: |
+        Entirely fine either way, and it does not affect whether the proposal is accepted. For
+        a new provider it does matter: provider integrations decay, and one needs an owner.

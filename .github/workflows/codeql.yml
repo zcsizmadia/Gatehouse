@@ -1,0 +1,72 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, so a newly published query catches an old commit. A gateway that
+    # holds provider credentials is worth re-scanning even when nothing changed.
+    - cron: '17 5 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # build-mode: none — buildless extraction, which is also what GitHub's
+          # default setup now uses for C#.
+          #
+          # The alternative, a traced manual build, extracts the output of our source
+          # generators along with the real sources. Gatehouse leans on generators heavily
+          # (System.Text.Json and the configuration binder) because that is what makes the
+          # NativeAOT build possible, and the binder generator emits patterns CodeQL
+          # correctly flags — nine error-severity self-assignments, none of them ours and
+          # none of them fixable. Enough noise to bury a genuine finding.
+          #
+          # paths-ignore does not help: it is not honoured for compiled languages. Buildless
+          # extraction is the principled fix rather than a suppression, because it analyses
+          # what we wrote instead of what a generator emitted. The trade-off is accepted
+          # knowingly: some interprocedural queries are less precise without a build. If a
+          # future finding needs that precision, the answer is a targeted query, not
+          # re-enabling extraction of generated code.
+          - language: csharp
+            build-mode: none
+
+          # The smoke test and stub upstream are executable parts of the release gate, so
+          # they are scanned rather than treated as inert scaffolding.
+          - language: python
+            build-mode: none
+          - language: actions
+            build-mode: none
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}
