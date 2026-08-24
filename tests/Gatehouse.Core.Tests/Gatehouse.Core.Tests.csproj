@@ -8,8 +8,8 @@
 
     <!-- TUnit runs on Microsoft.Testing.Platform: the test assembly is its own executable
          rather than something a VSTest host reflects over. That is why it works under
-         NativeAOT, which is why Gatehouse uses it. The runner is selected repo-wide in
-         dotnet.config. -->
+         NativeAOT, which is why Gatehouse uses it. The runner is selected repo-wide by
+         the "test" block in global.json. -->
     <OutputType>Exe</OutputType>
   </PropertyGroup>
 
