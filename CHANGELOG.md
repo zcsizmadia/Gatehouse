@@ -12,6 +12,34 @@ guarantee takes effect at v1.0 — see the [roadmap](./ROADMAP.md).
 
 ### Added
 
+**Phase 1 — resilience.**
+
+- Per-route **fallback chains**. A route may declare ordered fallback aliases;
+  a failure the upstream is responsible for (408, 429, 5xx) falls through to the
+  next one. A failure the caller has to fix (400, 401, 402, 403) does not —
+  retrying it elsewhere bills a second account to produce the same rejection.
+  Chains are resolved non-transitively, so what one route declares is every
+  upstream a request for it can reach.
+- **Circuit breakers**, keyed per provider *and* upstream model rather than per
+  provider: Azure quota is per deployment, so a saturated `gpt-4o` deployment
+  must not take out the `gpt-4o-mini` deployment beside it. Rolling window with
+  a minimum-throughput gate, so partial degradation is detected and a quiet
+  gateway does not trip on a single failure. One probe on recovery, not one per
+  waiting caller.
+- Streamed fallback happens strictly before the first chunk reaches the client.
+  After that the 200 is committed, and failing over would mean replaying tokens
+  the caller already saw or splicing two completions together — so mid-stream
+  failures surface as themselves.
+- The request log now records the route that **actually answered**. Attributing a
+  successful fallback to the primary provider would bill an account that was
+  never called.
+- New metrics: `gatehouse.route.fallbacks` and
+  `gatehouse.circuit_breaker.rejections`.
+- New configuration section `Gatehouse:Resilience`. Both features are on by
+  default and inert on a healthy deployment.
+- Known gaps are documented rather than left to be discovered — see
+  [docs/resilience.md](./docs/resilience.md).
+
 **Phase 1 — virtual keys.**
 
 - Virtual keys: `Authorization: Bearer gh-sk-...` credentials that let applications

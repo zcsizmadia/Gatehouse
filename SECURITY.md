@@ -143,7 +143,10 @@ rather than to what is planned.
   exists today.
 - Malicious models. Gatehouse governs access, not model behaviour.
 - Denial of service against an upstream provider by an authorised caller. There is
-  no rate limiting yet.
+  no rate limiting yet. Circuit breakers stop Gatehouse *itself* from hammering a
+  provider that is already failing, which is a load-shedding property rather than
+  a security control: an authorised caller can still send as many requests as they
+  like to a provider that is healthy.
 
 ## Hardening guidance
 

@@ -41,8 +41,8 @@ The smallest thing a .NET shop can actually deploy.
   - [ ] Amazon Bedrock — deferred to its own pull request; see ADR 0002
 - Virtual keys, fallback chains, circuit breakers
   - [x] Virtual keys, with revocation, expiry and chargeback attribution
-  - [ ] Fallback chains
-  - [ ] Circuit breakers
+  - [x] Fallback chains — per-route, non-transitive; see [resilience](./docs/resilience.md)
+  - [x] Circuit breakers — rolling-window, keyed per provider *and* upstream model
 - Token metering that **reconciles against provider invoices** — LiteLLM's
   most-cited bug, and the one finance teams notice
 - Exact-match caching only
