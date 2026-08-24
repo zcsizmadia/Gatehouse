@@ -50,6 +50,25 @@ jobs:
       - name: Restore
         run: dotnet restore Gatehouse.slnx
 
+      - name: Verify the Dockerfile lists every source project
+        # The Dockerfile copies project files individually so the restore layer caches
+        # against the dependency graph rather than the source. Adding a project and
+        # forgetting this list fails only inside the container build, minutes later and
+        # nowhere near the change. A comment already said so and was missed anyway, so
+        # this is the mechanical version.
+        shell: bash
+        run: |
+          missing=0
+          while read -r project; do
+            if ! grep -qF "$project" deploy/docker/Dockerfile; then
+              echo "::error file=deploy/docker/Dockerfile::$project is in the solution but not COPYed in the Dockerfile"
+              missing=1
+            fi
+          done < <(grep -oE 'src/[^"]+\.csproj' Gatehouse.slnx)
+
+          [ "$missing" -eq 0 ] || exit 1
+          echo "Every src project appears in the Dockerfile."
+
       - name: Build
         # TreatWarningsAsErrors is on repository-wide, so this step is also the
         # analyzer, style and AOT-compatibility gate.
