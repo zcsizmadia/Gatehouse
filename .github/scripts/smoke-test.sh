@@ -22,6 +22,14 @@
 set -euo pipefail
 
 BINARY="${1:?usage: smoke-test.sh <path-to-gatehouse-binary>}"
+
+# Resolved to an absolute path immediately, because later steps run the binary from
+# inside a temporary directory and a relative path stops working the moment anything
+# cds. This is not hypothetical: CI passed an absolute path and the release workflow
+# passed a relative one, so the script worked on every pull request and failed on the
+# first real tag. Normalising here makes the script correct for any caller instead of
+# depending on all of them to agree.
+BINARY="$(cd "$(dirname "$BINARY")" && pwd)/$(basename "$BINARY")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 GATEWAY_PORT=18080
