@@ -48,6 +48,40 @@ public sealed record RequestRecord
     public int CompletionTokens { get; init; }
 
     /// <summary>
+    /// Prompt tokens served from the provider's cache, a subset of <see cref="PromptTokens"/>.
+    /// </summary>
+    /// <remarks>
+    /// Persisted because a token count that cannot separate these is a token count that cannot
+    /// be reconciled against an invoice. Providers bill a cache read at a fraction of the
+    /// normal input rate — roughly a tenth — so two months with identical prompt-token totals
+    /// and different cache hit rates produce materially different bills. A reconciliation that
+    /// only knows the total can see that the numbers disagree and cannot say why.
+    /// </remarks>
+    public int CachedPromptTokens { get; init; }
+
+    /// <summary>
+    /// Prompt tokens written into the provider's cache, a subset of <see cref="PromptTokens"/>.
+    /// </summary>
+    /// <remarks>
+    /// Billed at a <em>premium</em> over the normal input rate rather than a discount, which is
+    /// why it is a separate column and not folded in with <see cref="CachedPromptTokens"/>.
+    /// Netting the two off against each other would hide a real cost.
+    /// </remarks>
+    public int CacheCreationTokens { get; init; }
+
+    /// <summary>
+    /// Whether Gatehouse was able to read this request's token counts at all.
+    /// </summary>
+    /// <remarks>
+    /// False for passthrough traffic, which is forwarded verbatim and therefore unreadable.
+    /// An explicit column rather than a convention: the previous marker was a
+    /// <c>(passthrough:…)</c> prefix on the requested model, and identifying the single
+    /// largest category of unexplained spend by string prefix is the kind of thing that keeps
+    /// working right up until someone names a model badly.
+    /// </remarks>
+    public bool Metered { get; init; } = true;
+
+    /// <summary>
     /// Whether the token counts came from the provider rather than local estimation.
     /// </summary>
     /// <remarks>

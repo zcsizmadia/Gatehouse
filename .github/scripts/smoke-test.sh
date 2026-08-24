@@ -11,11 +11,12 @@
 #   4. proxy a buffered completion and report provider token usage,
 #   5. reject an unconfigured model with 404 rather than 500,
 #   6. reject an unauthenticated request with 401,
-#   7. start from the sample configuration the README points new users at.
+#   7. start from the sample configuration the README points new users at,
+#   8. report recorded usage and reconcile it against a provider statement.
 #
 # Publishing without running the result proves only that the linker exited zero.
 # AOT failures characteristically surface at first use — a missing serializer
-# context, a trimmed type — which is exactly what steps 2 to 7 exercise.
+# context, a trimmed type — which is exactly what steps 2 to 8 exercise.
 
 set -euo pipefail
 
@@ -338,6 +339,46 @@ fi
 kill "$SAMPLE_PID" 2>/dev/null || true
 wait "$SAMPLE_PID" 2>/dev/null || true
 echo "PASS: samples/gatehouse.json loads, validates and starts"
+
+# ------------------------------------------------------------------------------
+# 8. Usage reporting works in the published binary
+# ------------------------------------------------------------------------------
+# The completions above are already in the request log, so this asserts the whole
+# metering path end to end: the aggregation SQL, the v3 cache and metered columns,
+# and the CLI's own configuration binding — which is a separate code path from the
+# server's, and therefore a separate chance for NativeAOT to break it.
+echo "Reporting usage"
+usage_out="$("$BINARY" usage summary --from '1970-01-01T00:00:00Z' --to '2999-01-01T00:00:00Z' \
+    --config "$WORK_DIR_NATIVE/gatehouse.json" 2>&1)" \
+    || { echo "$usage_out" >&2; fail "usage summary failed"; }
+
+# 'upstream-name' is what the route sends upstream, so finding it here also proves
+# the aggregation groups by the upstream model rather than the caller's alias.
+echo "$usage_out" | grep -q 'upstream-name' \
+    || { echo "$usage_out" >&2; fail "usage summary did not report the model that served traffic"; }
+echo "PASS: usage summary reports recorded traffic"
+
+# A statement naming a model nobody called must produce a finding and exit 1.
+# The exit code is the contract a scheduled month-end job depends on, so it is
+# asserted rather than inferred from the text.
+cat > "$WORK_DIR/statement.csv" <<'CSV'
+provider,model,prompt_tokens,completion_tokens
+stub,a-model-nobody-called,50000000,10000000
+CSV
+
+set +e
+"$BINARY" usage reconcile --statement "$WORK_DIR_NATIVE/statement.csv" \
+    --from '1970-01-01T00:00:00Z' --to '2999-01-01T00:00:00Z' \
+    --config "$WORK_DIR_NATIVE/gatehouse.json" > "$WORK_DIR/reconcile.txt" 2>&1
+reconcile_status=$?
+set -e
+
+[ "$reconcile_status" = "1" ] \
+    || { cat "$WORK_DIR/reconcile.txt" >&2; fail "usage reconcile exited $reconcile_status, expected 1"; }
+
+grep -q 'NOT RECORDED BY GATEHOUSE' "$WORK_DIR/reconcile.txt" \
+    || { cat "$WORK_DIR/reconcile.txt" >&2; fail "reconcile did not flag a model Gatehouse never saw"; }
+echo "PASS: usage reconcile flags unrecorded spend and exits 1"
 
 # ------------------------------------------------------------------------------
 # The request log must exist. A gateway that serves traffic without recording it

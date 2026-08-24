@@ -90,6 +90,11 @@ internal sealed class PassthroughMiddleware
                     Streamed = false,
                     StatusCode = context.Response.StatusCode,
                     UsageIsProviderReported = false,
+
+                    // The one place this is set false. Passthrough forwards the body untouched,
+                    // so there are no token counts to read — and a reconciliation needs to know
+                    // that as a fact about the row rather than infer it from the model name.
+                    Metered = false,
                     Duration = Stopwatch.GetElapsedTime(start),
                     ErrorType = context.Response.StatusCode >= 400 ? "passthrough_upstream_error" : null,
                 },

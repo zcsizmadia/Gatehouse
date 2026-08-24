@@ -58,6 +58,7 @@ internal static class GatehouseBuilderExtensions
 
         builder.Services.AddSingleton<SqliteRequestLogStore>();
         builder.Services.AddSingleton<IRequestLogStore>(sp => sp.GetRequiredService<SqliteRequestLogStore>());
+        builder.Services.AddSingleton<IUsageStore>(sp => sp.GetRequiredService<SqliteRequestLogStore>());
         builder.Services.AddHostedService(sp => sp.GetRequiredService<SqliteRequestLogStore>());
 
         builder.Services.AddSingleton<IVirtualKeyStore, SqliteVirtualKeyStore>();

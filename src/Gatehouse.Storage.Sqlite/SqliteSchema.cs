@@ -15,15 +15,24 @@ namespace Gatehouse.Storage.Sqlite;
 /// migration framework in the way.
 /// </para>
 /// <para>
-/// Each migration must be idempotent and must never rewrite existing rows. The request log
-/// becomes an audit record in Phase 2, and an audit record that a software upgrade can
-/// silently modify is not one.
+/// Each migration must be idempotent, and must not rewrite any <em>recorded fact</em> on an
+/// existing row. The request log becomes an audit record in Phase 2, and an audit record that
+/// a software upgrade can silently modify is not one.
+/// </para>
+/// <para>
+/// There is one narrow exception, exercised once by version 3, and it is written down here
+/// rather than left as a surprise in the migration list. A new column that classifies rows may
+/// be backfilled to the value that was always semantically true of them — version 3 marks
+/// pre-existing passthrough rows unmetered, which they always were. What must never happen is
+/// a migration that changes a token count, a timestamp, a status code or an attribution label:
+/// those are the observations, and rewriting an observation is falsifying the record. Adding
+/// the exception to this list requires the same justification in the migration's own comment.
 /// </para>
 /// </remarks>
 public static class SqliteSchema
 {
     /// <summary>The schema version this build expects.</summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     private static readonly string[] Migrations =
     [
@@ -92,6 +101,37 @@ public static class SqliteSchema
 
         CREATE INDEX IF NOT EXISTS ix_request_log_attribution
             ON request_log (organisation, team, application, timestamp_utc DESC);
+        """,
+
+        // Version 3 — the columns invoice reconciliation needs.
+        //
+        // Cache reads and cache writes are billed at different rates from ordinary input
+        // tokens (roughly a tenth and roughly a premium respectively), so a prompt-token
+        // total that cannot separate them can detect a disagreement with an invoice but
+        // cannot explain it. Providers already report the split; Gatehouse was computing it
+        // and discarding it at the storage boundary.
+        //
+        // `metered` replaces sniffing for a "(passthrough:...)" prefix on requested_model.
+        // Unmetered traffic is the largest single category of legitimately unexplained spend,
+        // and it deserves a column rather than a naming convention.
+        //
+        // Existing rows keep the defaults, which are the honest values for them: no cache
+        // split was recorded, and every pre-v3 row that was passthrough is indistinguishable
+        // from a metered one by anything except that prefix. The backfill below applies it
+        // where the prefix is present, and is the only rewrite of existing rows in the
+        // schema's history — justified because leaving those rows claiming to be metered
+        // would overstate what Gatehouse can account for.
+        """
+        ALTER TABLE request_log ADD COLUMN prompt_tokens_cached   INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE request_log ADD COLUMN prompt_tokens_cache_write INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE request_log ADD COLUMN metered                INTEGER NOT NULL DEFAULT 1;
+
+        UPDATE request_log
+           SET metered = 0
+         WHERE requested_model LIKE '(passthrough:%';
+
+        CREATE INDEX IF NOT EXISTS ix_request_log_usage
+            ON request_log (provider, upstream_model, timestamp_utc);
         """,
     ];
 
