@@ -6,11 +6,23 @@ namespace Gatehouse.Wire;
 /// An OpenAI-compatible chat completion request, as received from a client.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Gatehouse speaks OpenAI-compatible in and provider-native out. Clients therefore never
 /// need a Gatehouse SDK: any existing OpenAI client library works by changing a base URL.
-/// This type models the subset of the request surface that Phase 0 routes on. Fields it
-/// does not yet interpret are preserved and forwarded verbatim by the provider layer, so
-/// interpreting one later is not a breaking change for callers already sending it.
+/// This type models the subset of the request surface Gatehouse interprets.
+/// </para>
+/// <para>
+/// <strong>Fields not modelled here are dropped, not forwarded.</strong> The provider layer
+/// builds its upstream body field by field from this type, so a client sending something
+/// Gatehouse does not know about will find it silently absent upstream. Interpreting a new
+/// field later is therefore a behaviour change for callers already sending it, not a no-op.
+/// </para>
+/// <para>
+/// This is load-bearing beyond the provider layer: <c>CacheKey</c> hashes exactly these
+/// fields, and its correctness argument is that nothing outside them can reach the provider.
+/// Adding <c>JsonExtensionData</c> here, or forwarding a raw body, breaks that argument and
+/// has to change the cache key in the same commit.
+/// </para>
 /// </remarks>
 public sealed class ChatCompletionRequest
 {

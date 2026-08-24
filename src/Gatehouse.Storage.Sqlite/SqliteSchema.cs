@@ -32,7 +32,7 @@ namespace Gatehouse.Storage.Sqlite;
 public static class SqliteSchema
 {
     /// <summary>The schema version this build expects.</summary>
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     private static readonly string[] Migrations =
     [
@@ -132,6 +132,19 @@ public static class SqliteSchema
 
         CREATE INDEX IF NOT EXISTS ix_request_log_usage
             ON request_log (provider, upstream_model, timestamp_utc);
+        """,
+
+        // Version 4 — cache hits, kept out of the billed totals.
+        //
+        // A cache hit has real token counts and cost nothing: no provider billed for it.
+        // Counting it as consumption would inflate recorded usage by exactly what the cache
+        // saved, and a reconciliation would then report Gatehouse recording MORE than the
+        // provider charged — the over-count direction, which overcharges an internal team.
+        //
+        // Existing rows default to 0, which is correct for every one of them: there was no
+        // cache before this version.
+        """
+        ALTER TABLE request_log ADD COLUMN served_from_cache INTEGER NOT NULL DEFAULT 0;
         """,
     ];
 

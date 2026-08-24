@@ -45,7 +45,7 @@ The smallest thing a .NET shop can actually deploy.
   - [x] Circuit breakers — rolling-window, keyed per provider *and* upstream model
 - [x] Token metering that **reconciles against provider invoices** — LiteLLM's
   most-cited bug, and the one finance teams notice. See [metering](./docs/metering.md)
-- [ ] Exact-match caching only
+- [x] Exact-match caching only — off by default; see [caching](./docs/caching.md)
 - [x] OpenTelemetry GenAI semantic-convention telemetry
 
 **Gate:** a .NET shop can replace a basic LiteLLM deployment with one binary.

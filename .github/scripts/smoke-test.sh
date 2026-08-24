@@ -12,11 +12,12 @@
 #   5. reject an unconfigured model with 404 rather than 500,
 #   6. reject an unauthenticated request with 401,
 #   7. start from the sample configuration the README points new users at,
-#   8. report recorded usage and reconcile it against a provider statement.
+#   8. report recorded usage and reconcile it against a provider statement,
+#   9. serve a repeated request from the exact-match response cache.
 #
 # Publishing without running the result proves only that the linker exited zero.
 # AOT failures characteristically surface at first use — a missing serializer
-# context, a trimmed type — which is exactly what steps 2 to 8 exercise.
+# context, a trimmed type — which is exactly what steps 2 to 9 exercise.
 
 set -euo pipefail
 
@@ -30,6 +31,10 @@ UPSTREAM_PORT=18081
 # starts. It runs after the main gateway has been asserted against, but that one
 # is still bound, so it needs a port of its own.
 SAMPLE_PORT=18082
+
+# A third gateway port, for the cache check, which runs with caching enabled while
+# the other two are still bound.
+CACHE_PORT=18083
 
 # samples/ lives two levels above .github/scripts.
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -58,6 +63,7 @@ fi
 STUB_PID=""
 GATEWAY_PID=""
 SAMPLE_PID=""
+CACHE_PID=""
 
 cleanup() {
     local status=$?
@@ -65,6 +71,7 @@ cleanup() {
     [ -n "$GATEWAY_PID" ] && kill "$GATEWAY_PID" 2>/dev/null || true
     [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null || true
     [ -n "$SAMPLE_PID" ] && kill "$SAMPLE_PID" 2>/dev/null || true
+    [ -n "$CACHE_PID" ] && kill "$CACHE_PID" 2>/dev/null || true
 
     if [ "$status" -ne 0 ] && [ -f "$WORK_DIR/gateway.log" ]; then
         echo "--- gateway log ---" >&2
@@ -379,6 +386,75 @@ set -e
 grep -q 'NOT RECORDED BY GATEHOUSE' "$WORK_DIR/reconcile.txt" \
     || { cat "$WORK_DIR/reconcile.txt" >&2; fail "reconcile did not flag a model Gatehouse never saw"; }
 echo "PASS: usage reconcile flags unrecorded spend and exits 1"
+
+# ------------------------------------------------------------------------------
+# 9. Exact-match caching works in the published binary
+# ------------------------------------------------------------------------------
+# Caching is off by default, so it is enabled here through an environment
+# variable rather than by changing the config the earlier steps asserted against.
+#
+# Worth a step of its own under NativeAOT specifically: the cache key path uses
+# Utf8JsonWriter, IncrementalHash and ArrayPool, and cryptography plus pooling is
+# exactly the combination that works under the JIT and fails once trimmed.
+echo "Checking the response cache"
+
+CACHE_DIR="$WORK_DIR/cache"
+mkdir -p "$CACHE_DIR"
+sed "s|$WORK_DIR_NATIVE/gatehouse.db|$WORK_DIR_NATIVE/cache/gatehouse.db|" \
+    "$WORK_DIR/gatehouse.json" > "$CACHE_DIR/gatehouse.json"
+
+CACHE_DIR_NATIVE="$CACHE_DIR"
+if command -v cygpath >/dev/null 2>&1; then
+    CACHE_DIR_NATIVE="$(cygpath -m "$CACHE_DIR")"
+fi
+
+"$BINARY" keys create --name cache-check --config "$CACHE_DIR_NATIVE/gatehouse.json" \
+    > "$CACHE_DIR/keys.txt" 2>&1 \
+    || { cat "$CACHE_DIR/keys.txt" >&2; fail "keys create failed for the cache check"; }
+
+CACHE_SECRET="$(grep -oE 'gh-sk-[A-Za-z0-9_-]+' "$CACHE_DIR/keys.txt" | head -n 1)"
+[ -n "$CACHE_SECRET" ] || fail "no secret for the cache check"
+
+Gatehouse__Cache__Enabled=true "$BINARY" --config "$CACHE_DIR_NATIVE/gatehouse.json" \
+    --urls "http://127.0.0.1:$CACHE_PORT" > "$CACHE_DIR/gateway.log" 2>&1 &
+CACHE_PID=$!
+
+cache_ready=0
+for _ in $(seq 1 60); do
+    if curl --silent --fail --max-time 2 "http://127.0.0.1:$CACHE_PORT/health/ready" >/dev/null; then
+        cache_ready=1
+        break
+    fi
+    if ! kill -0 "$CACHE_PID" 2>/dev/null; then
+        break
+    fi
+    sleep 0.5
+done
+
+if [ "$cache_ready" -ne 1 ]; then
+    cat "$CACHE_DIR/gateway.log" >&2
+    fail "the cache-enabled gateway did not start"
+fi
+
+cache_body='{"model":"smoke-model","stream":false,"messages":[{"role":"user","content":"cache me"}]}'
+
+# First call populates, second must be served from memory.
+curl --silent --fail --header "Authorization: Bearer $CACHE_SECRET" \
+    --header 'Content-Type: application/json' --data "$cache_body" \
+    "http://127.0.0.1:$CACHE_PORT/v1/chat/completions" > /dev/null \
+    || fail "the first cacheable request failed"
+
+cache_header="$(curl --silent --dump-header - --output /dev/null \
+    --header "Authorization: Bearer $CACHE_SECRET" \
+    --header 'Content-Type: application/json' --data "$cache_body" \
+    "http://127.0.0.1:$CACHE_PORT/v1/chat/completions" | grep -i '^x-gatehouse-cache:' || true)"
+
+echo "$cache_header" | grep -qi 'hit' \
+    || { cat "$CACHE_DIR/gateway.log" >&2; fail "the repeated request was not served from cache (header: '$cache_header')"; }
+
+kill "$CACHE_PID" 2>/dev/null || true
+wait "$CACHE_PID" 2>/dev/null || true
+echo "PASS: a repeated request is served from the response cache"
 
 # ------------------------------------------------------------------------------
 # The request log must exist. A gateway that serves traffic without recording it

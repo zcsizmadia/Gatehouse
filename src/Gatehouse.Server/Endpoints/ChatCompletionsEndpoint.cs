@@ -1,4 +1,6 @@
+using System.Text;
 using System.Text.Json;
+using Gatehouse.Caching;
 using Gatehouse.Diagnostics;
 using Gatehouse.Providers;
 using Gatehouse.Resilience;
@@ -32,6 +34,7 @@ internal static class ChatCompletionsEndpoint
         var router = context.RequestServices.GetRequiredService<IModelRouter>();
         var providers = context.RequestServices.GetRequiredService<IProviderRegistry>();
         var dispatcher = context.RequestServices.GetRequiredService<IChatDispatcher>();
+        var cache = context.RequestServices.GetRequiredService<IResponseCache>();
         var store = context.RequestServices.GetRequiredService<IRequestLogStore>();
         var timeProvider = context.RequestServices.GetRequiredService<TimeProvider>();
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -117,14 +120,93 @@ internal static class ChatCompletionsEndpoint
         tracker.AuthenticatedKey =
             context.Items[VirtualKeyAuthenticationMiddleware.AuthenticatedKeyItem] as VirtualKey;
 
+        // Computed once and reused for the lookup and the store, because it is a SHA-256 over
+        // the whole conversation and hashing a long prompt twice per request is not free.
+        // Null when caching is off, which skips the hashing entirely.
+        string? cacheKey = cache.Enabled
+            ? CacheKey.Compute(request, route, CacheScopeFor(cache, tracker.AuthenticatedKey))
+            : null;
+
+        if (cacheKey is not null && cache.TryGet(cacheKey, out CachedResponse? hit))
+        {
+            await ServeFromCacheAsync(context, request, hit!.Response, tracker, clientToken);
+            return;
+        }
+
         if (request.Stream)
         {
-            await HandleStreamingAsync(context, request, route, dispatcher, tracker, clientToken);
+            await HandleStreamingAsync(context, request, route, dispatcher, tracker, cache, cacheKey, clientToken);
         }
         else
         {
-            await HandleBufferedAsync(context, request, route, dispatcher, tracker, clientToken);
+            await HandleBufferedAsync(context, request, route, dispatcher, tracker, cache, cacheKey, clientToken);
         }
+    }
+
+    /// <summary>
+    /// The organisation a cache entry belongs to, or null for a gateway-wide cache.
+    /// </summary>
+    /// <remarks>
+    /// An unattributed request — authentication disabled, or a key with no organisation — gets
+    /// a scope of <c>"(unattributed)"</c> rather than null when scoping is on. Falling back to
+    /// null would silently place those requests in the shared, cross-organisation pool, which
+    /// is exactly the boundary the setting exists to hold.
+    /// </remarks>
+    private static string? CacheScopeFor(IResponseCache cache, VirtualKey? key)
+    {
+        return cache.ScopeToOrganisation
+            ? key?.Organisation ?? "(unattributed)"
+            : null;
+    }
+
+    /// <summary>Replays a cached completion in whichever form the caller asked for.</summary>
+    private static async Task ServeFromCacheAsync(
+        HttpContext context,
+        ChatCompletionRequest request,
+        ChatCompletionResponse cached,
+        CompletionTracker tracker,
+        CancellationToken clientToken)
+    {
+        // Announced in a header so a caller can tell. A cache that is invisible is a cache
+        // nobody can debug, and "why is this response identical every time" is a support
+        // ticket waiting to happen.
+        context.Response.Headers["X-Gatehouse-Cache"] = "hit";
+
+        tracker.ServedFromCache = true;
+
+        if (request.Stream)
+        {
+            StartEventStream(context);
+            var writer = new ServerSentEventWriter(context.Response.Body);
+
+            foreach (ChatCompletionChunk chunk in CachedResponseReplay.ToChunks(
+                         cached, tracker.Id, tracker.CreatedUnixSeconds))
+            {
+                await writer.WriteChunkAsync(chunk, clientToken);
+                tracker.MarkFirstChunkFlushed();
+            }
+
+            await writer.WriteDoneAsync(clientToken);
+        }
+        else
+        {
+            context.Response.StatusCode = StatusCodes.Status200OK;
+            context.Response.ContentType = "application/json; charset=utf-8";
+
+            await JsonSerializer.SerializeAsync(
+                context.Response.Body,
+                CachedResponseReplay.ToResponse(cached, tracker.Id, tracker.CreatedUnixSeconds),
+                GatehouseJsonContext.Default.ChatCompletionResponse,
+                clientToken);
+        }
+
+        await tracker.CompleteAsync(
+            StatusCodes.Status200OK,
+            cached.Usage,
+            cached.Model,
+            cached.Choices.Count > 0 ? cached.Choices[0].FinishReason : null,
+            errorType: null,
+            cancellationToken: CancellationToken.None);
     }
 
     private static async Task HandleBufferedAsync(
@@ -133,6 +215,8 @@ internal static class ChatCompletionsEndpoint
         ModelRoute route,
         IChatDispatcher dispatcher,
         CompletionTracker tracker,
+        IResponseCache cache,
+        string? cacheKey,
         CancellationToken clientToken)
     {
         try
@@ -143,6 +227,16 @@ internal static class ChatCompletionsEndpoint
             // Re-pointed at the route that actually answered, which after a fallback is not
             // the one the caller asked for. The request log is chargeback data: attributing
             // the spend to the primary provider would bill an account that was never called.
+            tracker.Route = dispatch.Route;
+
+            // Stored before the response is written rather than after. Writing to the client
+            // can fail — a disconnect mid-serialisation — and an answer the provider was paid
+            // for is worth keeping whether or not this particular caller received it.
+            if (cacheKey is not null)
+            {
+                cache.Store(cacheKey, response);
+            }
+
             tracker.Route = dispatch.Route;
 
             context.Response.StatusCode = StatusCodes.Status200OK;
@@ -188,6 +282,8 @@ internal static class ChatCompletionsEndpoint
         ModelRoute route,
         IChatDispatcher dispatcher,
         CompletionTracker tracker,
+        IResponseCache cache,
+        string? cacheKey,
         CancellationToken clientToken)
     {
         StreamedDispatch dispatch;
@@ -238,9 +334,34 @@ internal static class ChatCompletionsEndpoint
             string? finishReason = null;
             string? responseModel = null;
 
+            // Only allocated when caching is on, so a deployment with the cache off pays
+            // nothing for it.
+            StringBuilder? assembled = cacheKey is not null ? new StringBuilder() : null;
+            string? assembledRole = null;
+            bool cacheable = cacheKey is not null;
+
             while (hasFirst)
             {
-                ChunkOutcome outcome = await WriteChunkAsync(writer, chunks.Current, tracker, clientToken);
+                ChatCompletionChunk current = chunks.Current;
+
+                if (assembled is not null)
+                {
+                    if (current.Choices.Count > 1)
+                    {
+                        // A multi-choice stream cannot be reassembled by appending deltas into
+                        // one string. Rather than store something subtly wrong, don't store it:
+                        // n > 1 is rare, and a cache that returns the wrong number of choices is
+                        // worse than a cache that misses.
+                        cacheable = false;
+                    }
+                    else if (current.Choices.Count == 1)
+                    {
+                        assembled.Append(current.Choices[0].Delta.Content);
+                        assembledRole ??= current.Choices[0].Delta.Role;
+                    }
+                }
+
+                ChunkOutcome outcome = await WriteChunkAsync(writer, current, tracker, clientToken);
 
                 // The final chunk carries usage and the finish reason; earlier ones do not.
                 // Keeping the last non-null of each means a provider that reports them early,
@@ -253,6 +374,38 @@ internal static class ChatCompletionsEndpoint
             }
 
             await writer.WriteDoneAsync(clientToken);
+
+            // A finish reason is the proof the upstream finished rather than the connection
+            // ending early. Caching a truncated answer would replay half a completion to every
+            // caller for the whole TTL — the worst failure this cache can have, because it
+            // looks like a model that just stops.
+            if (cacheable && assembled is not null && finishReason is not null && responseModel is not null)
+            {
+                cache.Store(
+                    cacheKey!,
+                    new ChatCompletionResponse
+                    {
+                        Id = tracker.Id,
+                        Created = tracker.CreatedUnixSeconds,
+                        Model = responseModel,
+                        Choices =
+                        [
+                            new ChatChoice
+                            {
+                                Index = 0,
+                                Message = new ChatMessage
+                                {
+                                    Role = assembledRole ?? ChatRoles.Assistant,
+                                    Content = assembled.ToString(),
+                                },
+                                FinishReason = finishReason,
+                            },
+                        ],
+                        Usage = usage,
+                        GatehouseProvider = dispatch.Route.Provider,
+                    });
+            }
+
             await tracker.CompleteAsync(
                 StatusCodes.Status200OK,
                 usage,

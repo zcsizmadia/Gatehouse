@@ -69,6 +69,13 @@ internal sealed class CompletionTracker
     /// </remarks>
     public VirtualKey? AuthenticatedKey { get; set; }
 
+    /// <summary>Whether the response came from the cache rather than a provider.</summary>
+    /// <remarks>
+    /// Recorded on the row so that the usage aggregation can keep these tokens out of the
+    /// billed totals. They are real tokens and nobody was charged for them.
+    /// </remarks>
+    public bool ServedFromCache { get; set; }
+
     /// <summary>
     /// Begins tracking a request and opens its span.
     /// </summary>
@@ -235,6 +242,12 @@ internal sealed class CompletionTracker
                 // but not explainable.
                 CachedPromptTokens = usage?.CachedPromptTokens ?? 0,
                 CacheCreationTokens = usage?.CacheCreationTokens ?? 0,
+
+                // Distinct from the two above, and easily confused with them. Those are the
+                // *provider's* prompt cache, and the tokens were billed at a discount. This is
+                // Gatehouse's own response cache, and the tokens were not billed at all — so
+                // the usage aggregation excludes this row from the billed totals entirely.
+                ServedFromCache = ServedFromCache,
 
                 // Absent usage is recorded as not-provider-reported rather than defaulting to
                 // true. A zero that claims to be authoritative is worse than a zero that

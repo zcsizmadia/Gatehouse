@@ -62,7 +62,8 @@ Working today: an OpenAI-compatible streaming endpoint; four provider families
 virtual keys with revocation, expiry and chargeback attribution; per-route
 [fallback chains and circuit breakers](./docs/resilience.md); usage metering
 that normalises the providers' disagreeing token semantics and [reconciles against
-a provider bill](./docs/metering.md); OpenTelemetry.
+a provider bill](./docs/metering.md); opt-in [exact-match caching](./docs/caching.md);
+OpenTelemetry.
 
 Not working yet, and load-bearing if you are evaluating: **no budgets, no spend
 limits, no per-key model restrictions, no RBAC, no SSO, no rate limiting.** A
@@ -149,8 +150,9 @@ Being honest about this is cheaper than being discovered:
 - Not production-ready. Phase 0 is an architecture spike.
 - Virtual keys authenticate and attribute requests, but they do not yet *limit*
   anything. Budgets, spend enforcement, SSO and RBAC arrive in Phase 2.
-- Semantic caching is deliberately **not** in the near-term plan. Exact-match
-  caching only, until we can ship semantic caching with honest safety metrics.
+- Semantic caching is deliberately **not** in the near-term plan. [Exact-match
+  caching](./docs/caching.md) only — and off by default — until we can ship semantic
+  caching with honest safety metrics.
 - Provider coverage is deliberately capped at seven. Breadth is how gateways rot.
 
 ## Supply chain
