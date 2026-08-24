@@ -46,6 +46,13 @@ public static class Program
             return await KeyCommands.RunAsync(args, string.IsNullOrEmpty(keysConfigPath) ? null : keysConfigPath);
         }
 
+        // Reporting, not serving: it reads the store and exits, so it must not build a host.
+        if (args.Length > 0 && string.Equals(args[0], "usage", StringComparison.Ordinal))
+        {
+            TryGetConfigPath(args, out string usageConfigPath);
+            return await UsageCommands.RunAsync(args, string.IsNullOrEmpty(usageConfigPath) ? null : usageConfigPath);
+        }
+
         WebApplication app = BuildApplication(args);
         await app.RunAsync();
         return 0;
@@ -215,9 +222,12 @@ public static class Program
             Usage:
               gatehouse [options]
               gatehouse keys <create|list|revoke> [options]
+              gatehouse usage <summary|reconcile> [options]
 
             Commands:
               keys                 Manage virtual keys. Run 'gatehouse keys' for details.
+              usage                Report recorded usage, and reconcile it against a
+                                   provider statement. Run 'gatehouse usage' for details.
 
             Options:
               --config <path>    Load configuration from a JSON file, in addition to

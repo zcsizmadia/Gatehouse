@@ -12,6 +12,38 @@ guarantee takes effect at v1.0 — see the [roadmap](./ROADMAP.md).
 
 ### Added
 
+**Phase 1 — metering and invoice reconciliation.**
+
+- `gatehouse usage summary` and `gatehouse usage reconcile`. Reconcile takes a CSV
+  export from the provider's own usage dashboard, compares it against the request
+  log, and reports each line as balanced, within known gaps, unexplained, missing
+  from the statement, or — worst — billed by the provider for a model Gatehouse has
+  never seen, which means a credential is in use outside the gateway entirely.
+- It does **not** try to make the numbers agree. It quantifies the disagreement,
+  bounds how much of it Gatehouse's own gaps could account for, and reports the
+  remainder as needing investigation. A reconciliation that always balances is not
+  doing anything.
+- Gaps are only counted in the direction they can act: unreadable requests can
+  only make a provider's figure larger, so they never excuse a statement that
+  comes in *lower* — that direction points at a double count, which is the failure
+  mode that overcharges an internal team.
+- Cache-read and cache-write token counts are now persisted. Providers were already
+  reporting them and Gatehouse was discarding them at the storage boundary: cache
+  reads bill at roughly a tenth of the input rate and cache writes at a premium, so
+  a prompt total that cannot separate them can detect a variance against an invoice
+  but not explain it.
+- `metered` is now an explicit column. Unmetered passthrough traffic was previously
+  identified by a `(passthrough:…)` prefix on the requested model — a naming
+  convention standing in for the single largest category of legitimately
+  unexplained spend.
+- Every summary prints a confidence figure: the share of requests whose tokens the
+  provider reported. A total printed without it is the number that ends up in a
+  spreadsheet as though it were exact.
+- `reconcile` exits 1 on findings and 2 on bad input, so it can be a scheduled
+  month-end job. Both commands are read-only and safe against a live gateway.
+- Schema version 3. Known gaps — including that this reconciles tokens rather than
+  currency, and why — are in [docs/metering.md](./docs/metering.md).
+
 **Phase 1 — resilience.**
 
 - Per-route **fallback chains**. A route may declare ordered fallback aliases;

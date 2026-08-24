@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Threading.Channels;
 using Gatehouse.Configuration;
+using Gatehouse.Metering;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -27,7 +28,7 @@ namespace Gatehouse.Storage.Sqlite;
 /// time-to-first-token.
 /// </para>
 /// </remarks>
-public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
+public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore, IUsageStore
 {
     // Roughly a minute of sustained traffic at a few hundred requests per second. Large
     // enough to absorb a disk stall, small enough to stay bounded in memory.
@@ -93,7 +94,8 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
             SELECT id, timestamp_utc, requested_model, provider, upstream_model, streamed,
                    status_code, prompt_tokens, completion_tokens, usage_is_provider_reported,
                    duration_ms, time_to_first_chunk_ms, error_type,
-                   virtual_key_id, organisation, team, application
+                   virtual_key_id, organisation, team, application,
+                   prompt_tokens_cached, prompt_tokens_cache_write, metered
             FROM request_log
             ORDER BY timestamp_utc DESC
             LIMIT $limit;
@@ -124,11 +126,114 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
                 Organisation = reader.IsDBNull(14) ? null : reader.GetString(14),
                 Team = reader.IsDBNull(15) ? null : reader.GetString(15),
                 Application = reader.IsDBNull(16) ? null : reader.GetString(16),
+                CachedPromptTokens = (int)reader.GetInt64(17),
+                CacheCreationTokens = (int)reader.GetInt64(18),
+                Metered = reader.GetInt64(19) != 0,
             });
         }
 
         return records;
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// Aggregated with a single GROUP BY rather than by streaming rows into memory. The
+    /// <c>ix_request_log_usage</c> index covers the provider, model and timestamp columns, so
+    /// a month's reconciliation is an index range scan.
+    /// </para>
+    /// <para>
+    /// Rows with no provider are excluded: those are requests rejected before any upstream was
+    /// chosen — an unknown model, a failed credential — and no provider ever billed for them.
+    /// Including them would put rejected traffic into a usage report as zero-token lines,
+    /// diluting every average computed from it.
+    /// </para>
+    /// </remarks>
+    public async ValueTask<IReadOnlyList<UsageSummary>> SummariseAsync(
+        UsageWindow window,
+        string? provider = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+
+        await using SqliteConnection connection = new(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await SqliteSchema.ApplyPragmasAsync(connection, cancellationToken);
+
+        await using SqliteCommand command = connection.CreateCommand();
+
+        // Half-open on timestamp so that consecutive windows neither overlap nor leave a gap.
+        //
+        // A note on what "provider-reported" means here: a row qualifies only if the provider
+        // actually reported counts AND those counts are non-zero. A reported zero is what an
+        // upstream sends on a request it rejected, and treating it as an authoritative
+        // measurement would let a month of rejections look like a month of free traffic.
+        command.CommandText =
+            """
+            SELECT provider,
+                   COALESCE(upstream_model, '(unspecified)')          AS model,
+                   COUNT(*)                                           AS requests,
+                   SUM(CASE WHEN metered = 1
+                             AND usage_is_provider_reported = 1
+                             AND (prompt_tokens + completion_tokens) > 0
+                            THEN 1 ELSE 0 END)                        AS reported_requests,
+                   SUM(CASE WHEN metered = 1
+                             AND (usage_is_provider_reported = 0
+                                  OR (prompt_tokens + completion_tokens) = 0)
+                            THEN 1 ELSE 0 END)                        AS requests_without_usage,
+                   SUM(CASE WHEN metered = 0 THEN 1 ELSE 0 END)       AS unmetered_requests,
+                   SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS failed_requests,
+                   SUM(prompt_tokens)                                 AS prompt_tokens,
+                   SUM(completion_tokens)                             AS completion_tokens,
+                   SUM(prompt_tokens_cached)                          AS prompt_tokens_cached,
+                   SUM(prompt_tokens_cache_write)                     AS prompt_tokens_cache_write
+              FROM request_log
+             WHERE timestamp_utc >= $from
+               AND timestamp_utc <  $to
+               AND provider IS NOT NULL
+               AND ($provider IS NULL OR provider = $provider)
+             GROUP BY provider, model
+             ORDER BY prompt_tokens + completion_tokens DESC;
+            """;
+
+        command.Parameters.AddWithValue("$from", Iso(window.FromInclusive));
+        command.Parameters.AddWithValue("$to", Iso(window.ToExclusive));
+        command.Parameters.AddWithValue("$provider", (object?)provider ?? DBNull.Value);
+
+        List<UsageSummary> summaries = [];
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            summaries.Add(new UsageSummary
+            {
+                Provider = reader.GetString(0),
+                UpstreamModel = reader.GetString(1),
+                Requests = reader.GetInt64(2),
+                ProviderReportedRequests = reader.GetInt64(3),
+                RequestsWithoutUsage = reader.GetInt64(4),
+                UnmeteredRequests = reader.GetInt64(5),
+                FailedRequests = reader.GetInt64(6),
+                PromptTokens = reader.GetInt64(7),
+                CompletionTokens = reader.GetInt64(8),
+                CachedPromptTokens = reader.GetInt64(9),
+                CacheCreationTokens = reader.GetInt64(10),
+            });
+        }
+
+        return summaries;
+    }
+
+    /// <summary>
+    /// Formats an instant the way the timestamp column stores it.
+    /// </summary>
+    /// <remarks>
+    /// The column is ISO-8601 text, so range comparisons are string comparisons and both sides
+    /// must be formatted identically. Round-trip format ("O") sorts lexicographically in the
+    /// same order as chronologically, which is the property the whole scheme rests on.
+    /// </remarks>
+    private static string Iso(DateTimeOffset instant) =>
+        instant.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Opens the database and applies any pending migrations before the host reports started.
@@ -269,12 +374,14 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
                     id, timestamp_utc, requested_model, provider, upstream_model, streamed,
                     status_code, prompt_tokens, completion_tokens, usage_is_provider_reported,
                     duration_ms, time_to_first_chunk_ms, error_type,
-                    virtual_key_id, organisation, team, application
+                    virtual_key_id, organisation, team, application,
+                    prompt_tokens_cached, prompt_tokens_cache_write, metered
                 ) VALUES (
                     $id, $timestamp, $requestedModel, $provider, $upstreamModel, $streamed,
                     $statusCode, $promptTokens, $completionTokens, $usageIsProviderReported,
                     $durationMs, $timeToFirstChunkMs, $errorType,
-                    $virtualKeyId, $organisation, $team, $application
+                    $virtualKeyId, $organisation, $team, $application,
+                    $cachedPromptTokens, $cacheCreationTokens, $metered
                 );
                 """;
 
@@ -297,6 +404,9 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
             SqliteParameter organisation = command.Parameters.Add("$organisation", SqliteType.Text);
             SqliteParameter team = command.Parameters.Add("$team", SqliteType.Text);
             SqliteParameter application = command.Parameters.Add("$application", SqliteType.Text);
+            SqliteParameter cachedPromptTokens = command.Parameters.Add("$cachedPromptTokens", SqliteType.Integer);
+            SqliteParameter cacheCreationTokens = command.Parameters.Add("$cacheCreationTokens", SqliteType.Integer);
+            SqliteParameter metered = command.Parameters.Add("$metered", SqliteType.Integer);
 
             foreach (RequestRecord record in batch)
             {
@@ -317,6 +427,9 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore
                 organisation.Value = (object?)record.Organisation ?? DBNull.Value;
                 team.Value = (object?)record.Team ?? DBNull.Value;
                 application.Value = (object?)record.Application ?? DBNull.Value;
+                cachedPromptTokens.Value = record.CachedPromptTokens;
+                cacheCreationTokens.Value = record.CacheCreationTokens;
+                metered.Value = record.Metered ? 1 : 0;
 
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }

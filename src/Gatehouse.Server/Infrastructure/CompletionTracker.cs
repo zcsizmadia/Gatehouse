@@ -229,6 +229,13 @@ internal sealed class CompletionTracker
                 PromptTokens = usage?.PromptTokens ?? 0,
                 CompletionTokens = usage?.CompletionTokens ?? 0,
 
+                // Persisted separately because the provider bills them separately: a cache
+                // read at a fraction of the input rate, a cache write at a premium. Folding
+                // them into the prompt total makes a variance against an invoice detectable
+                // but not explainable.
+                CachedPromptTokens = usage?.CachedPromptTokens ?? 0,
+                CacheCreationTokens = usage?.CacheCreationTokens ?? 0,
+
                 // Absent usage is recorded as not-provider-reported rather than defaulting to
                 // true. A zero that claims to be authoritative is worse than a zero that
                 // admits it is unknown, because only the second one can be reconciled later.

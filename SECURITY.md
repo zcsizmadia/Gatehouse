@@ -94,6 +94,7 @@ model.**
 | Tamper-evident audit log | ❌ Phase 2 | Ordinary SQLite rows; anyone with database access can alter them |
 | **Data protection** | | |
 | Prompt and completion text never persisted | ✅ | The request log stores counts and metadata only |
+| Usage reconcilable against a provider bill | ✅ | Token-level; `gatehouse usage reconcile`. Reports what it cannot account for rather than balancing silently |
 | Message content off telemetry by default | ✅ | Content capture is not implemented at all yet |
 | PII detection and redaction | ❌ Phase 2 | Presidio-based, not started |
 | **Credentials** | | |

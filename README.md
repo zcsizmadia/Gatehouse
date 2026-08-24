@@ -61,7 +61,8 @@ Working today: an OpenAI-compatible streaming endpoint; four provider families
 (OpenAI-compatible, Azure OpenAI with Entra managed identity, Anthropic, Gemini);
 virtual keys with revocation, expiry and chargeback attribution; per-route
 [fallback chains and circuit breakers](./docs/resilience.md); usage metering
-that normalises the providers' disagreeing token semantics; OpenTelemetry.
+that normalises the providers' disagreeing token semantics and [reconciles against
+a provider bill](./docs/metering.md); OpenTelemetry.
 
 Not working yet, and load-bearing if you are evaluating: **no budgets, no spend
 limits, no per-key model restrictions, no RBAC, no SSO, no rate limiting.** A
