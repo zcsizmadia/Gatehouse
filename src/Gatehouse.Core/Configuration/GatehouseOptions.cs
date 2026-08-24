@@ -1,4 +1,3 @@
-
 namespace Gatehouse.Configuration;
 
 /// <summary>
@@ -39,6 +38,9 @@ public sealed class GatehouseOptions
 
     /// <summary>How callers authenticate to the gateway.</summary>
     public AuthenticationOptions Authentication { get; set; } = new();
+
+    /// <summary>How Gatehouse behaves when an upstream misbehaves.</summary>
+    public ResilienceOptions Resilience { get; set; } = new();
 
     /// <summary>Where request records are persisted.</summary>
     public StoreOptions Store { get; set; } = new();
@@ -155,10 +157,24 @@ public sealed class ModelRouteOptions
     public string? UpstreamModel { get; set; }
 
     /// <summary>
-    /// Aliases to try in order if this route fails retryably. Fallback execution lands in
-    /// Phase 1; the field is defined here so the configuration format does not have to
-    /// change underneath early adopters.
+    /// Aliases to try, in order, if this route fails retryably.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Resolved <em>non-recursively</em>: this list is the whole chain. If <c>a</c> falls back
+    /// to <c>b</c> and <c>b</c> falls back to <c>c</c>, a request for <c>a</c> tries <c>a</c>
+    /// then <c>b</c> and stops. Transitive chains read as though they compose and then produce
+    /// fallback paths nobody declared and no reviewer can see by reading one entry — and they
+    /// make cycle detection a prerequisite for correctness rather than a non-issue. Spell the
+    /// chain out.
+    /// </para>
+    /// <para>
+    /// Only failures the upstream is responsible for fall through; see
+    /// <c>ProviderException.IsRetryable</c>. A malformed request fails on the primary route
+    /// and stops, because trying it again elsewhere bills a second provider to produce the
+    /// same rejection.
+    /// </para>
+    /// </remarks>
     public IList<string> Fallbacks { get; set; } = [];
 }
 
@@ -225,4 +241,72 @@ public sealed class TelemetryOptions
 
     /// <summary>An OTLP endpoint. When null, no OTLP exporter is registered.</summary>
     public string? OtlpEndpoint { get; set; }
+}
+
+/// <summary>How Gatehouse behaves when an upstream misbehaves.</summary>
+/// <remarks>
+/// The defaults are chosen so that turning resilience on changes nothing for a healthy
+/// deployment. A breaker that opens under normal operation is worse than no breaker: it
+/// converts provider latency into gateway outages and teaches operators to switch the
+/// feature off.
+/// </remarks>
+public sealed class ResilienceOptions
+{
+    /// <summary>
+    /// Whether a retryable failure falls through to the route's configured fallbacks.
+    /// </summary>
+    /// <remarks>
+    /// On by default, but inert unless a route actually declares <c>Fallbacks</c>. Turning it
+    /// off is the way to make an incident reproducible: with fallbacks live, the same request
+    /// can succeed against a different provider and the primary's failure is visible only in
+    /// telemetry.
+    /// </remarks>
+    public bool FallbacksEnabled { get; set; } = true;
+
+    /// <summary>Whether failing upstreams are taken out of rotation.</summary>
+    public bool CircuitBreakerEnabled { get; set; } = true;
+
+    /// <summary>
+    /// The fraction of calls in the window that must fail before the circuit opens.
+    /// </summary>
+    /// <remarks>
+    /// Half. Below that a provider is degraded rather than down, and a gateway that stops
+    /// using a provider serving half its traffic has made the outage worse than it was.
+    /// </remarks>
+    public double FailureRatio { get; set; } = 0.5;
+
+    /// <summary>
+    /// The number of calls the window must hold before <see cref="FailureRatio"/> is
+    /// consulted at all.
+    /// </summary>
+    /// <remarks>
+    /// Without this a single failure on a quiet gateway is a 100% failure rate. Ten is low
+    /// enough to react inside one window under real traffic and high enough that a
+    /// development deployment sending occasional requests never trips.
+    /// </remarks>
+    public int MinimumThroughput { get; set; } = 10;
+
+    /// <summary>How much recent history the failure ratio is computed over.</summary>
+    public int SamplingWindowSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// How long an open circuit rejects calls before admitting one probe.
+    /// </summary>
+    /// <remarks>
+    /// Fifteen seconds is short enough that a provider blip does not become a minute of
+    /// gateway downtime, and long enough that a provider being rate-limited gets a pause
+    /// rather than a probe on every request.
+    /// </remarks>
+    public int BreakDurationSeconds { get; set; } = 15;
+
+    /// <summary>
+    /// The most upstream calls one client request may cause, including the first.
+    /// </summary>
+    /// <remarks>
+    /// A safety rail rather than a tuning knob. Fallbacks are resolved non-recursively, so a
+    /// chain cannot loop, but a route with a long fallback list against a provider outage
+    /// would otherwise multiply one client request into as many billed upstream calls as
+    /// there are links. Four is two spare providers and a stop.
+    /// </remarks>
+    public int MaxAttempts { get; set; } = 4;
 }

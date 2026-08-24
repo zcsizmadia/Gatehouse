@@ -49,6 +49,14 @@ internal sealed class FakeUpstream : IAsyncDisposable
     /// <summary>Fails after this many chunks, simulating an upstream dying mid-generation.</summary>
     public int? FailAfterChunk { get; set; }
 
+    /// <summary>How many completion requests this upstream received.</summary>
+    /// <remarks>
+    /// The assertion that matters for fallback: a route that was skipped because its circuit
+    /// was open must show no increase here. Asserting only on the response body would pass
+    /// whether the dead provider was called and ignored or never called at all.
+    /// </remarks>
+    public int Requests { get; private set; }
+
     /// <summary>The model name the upstream received, for asserting alias translation.</summary>
     public string? LastRequestedModel { get; private set; }
 
@@ -85,6 +93,7 @@ internal sealed class FakeUpstream : IAsyncDisposable
             context.Request.Body,
             GatehouseJsonContext.Default.ChatCompletionRequest);
 
+        Requests++;
         LastRequestedModel = request?.Model;
         LastAuthorization = context.Request.Headers.Authorization.ToString();
 

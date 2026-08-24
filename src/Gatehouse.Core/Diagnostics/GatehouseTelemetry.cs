@@ -75,6 +75,25 @@ public static class GatehouseTelemetry
         description: "Requests rejected by Gatehouse without reaching a provider.");
 
     /// <summary>
+    /// Requests that were served by a fallback route rather than the one they asked for.
+    /// </summary>
+    /// <remarks>
+    /// The alert to build on this is not "greater than zero" — a fallback firing is the
+    /// feature working. It is a sustained rate, which says the primary provider is unhealthy
+    /// and nobody has been told, because from the callers' point of view nothing broke.
+    /// </remarks>
+    public static Counter<long> RouteFallbacks { get; } = Meter.CreateCounter<long>(
+        name: "gatehouse.route.fallbacks",
+        unit: "{request}",
+        description: "Requests served by a fallback route after the primary route failed.");
+
+    /// <summary>Calls not attempted because the upstream's circuit was open.</summary>
+    public static Counter<long> CircuitBreakerRejections { get; } = Meter.CreateCounter<long>(
+        name: "gatehouse.circuit_breaker.rejections",
+        unit: "{request}",
+        description: "Upstream calls skipped because the circuit for that upstream was open.");
+
+    /// <summary>
     /// OpenTelemetry GenAI semantic-convention attribute names.
     /// </summary>
     /// <remarks>
@@ -124,6 +143,14 @@ public static class GatehouseTelemetry
 
         /// <summary>The configured alias the caller routed through.</summary>
         public const string GatehouseRouteAlias = "gatehouse.route.alias";
+
+        /// <summary>The upstream model name, which for Azure OpenAI is the deployment.</summary>
+        public const string GatehouseUpstreamModel = "gatehouse.upstream.model";
+
+        /// <summary>
+        /// How many fallback links were traversed: 1 means the first fallback answered.
+        /// </summary>
+        public const string GatehouseFallbackDepth = "gatehouse.route.fallback_depth";
 
         /// <summary>Whether the response was streamed.</summary>
         public const string GatehouseStreamed = "gatehouse.streamed";

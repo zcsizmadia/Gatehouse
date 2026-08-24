@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Gatehouse.Diagnostics;
 using Gatehouse.Providers;
+using Gatehouse.Resilience;
 using Gatehouse.Routing;
 using Gatehouse.Security;
 using Gatehouse.Server.Infrastructure;
@@ -30,6 +31,7 @@ internal static class ChatCompletionsEndpoint
 
         var router = context.RequestServices.GetRequiredService<IModelRouter>();
         var providers = context.RequestServices.GetRequiredService<IProviderRegistry>();
+        var dispatcher = context.RequestServices.GetRequiredService<IChatDispatcher>();
         var store = context.RequestServices.GetRequiredService<IRequestLogStore>();
         var timeProvider = context.RequestServices.GetRequiredService<TimeProvider>();
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -84,10 +86,14 @@ internal static class ChatCompletionsEndpoint
             return;
         }
 
-        if (!providers.TryGet(route.Provider, out IChatProvider? provider))
+        // Checked here as well as in the dispatcher, and only for the primary route. Startup
+        // validation makes it unreachable either way, but reaching it through this branch
+        // produces "the gateway is misconfigured" rather than "every upstream is unavailable",
+        // and for a configuration bug the first message is the one that saves an hour.
+        if (!providers.TryGet(route.Provider, out _))
         {
-            // Startup validation should make this unreachable. If it happens anyway, it is a
-            // Gatehouse bug rather than a caller error, and it says so.
+            // If it happens anyway, it is a Gatehouse bug rather than a caller error, and it
+            // says so.
             logger.LogError(
                 "Model '{Alias}' resolved to provider '{Provider}', which is not registered. "
                 + "This indicates a configuration validation gap.",
@@ -113,11 +119,11 @@ internal static class ChatCompletionsEndpoint
 
         if (request.Stream)
         {
-            await HandleStreamingAsync(context, request, route, provider, tracker, clientToken);
+            await HandleStreamingAsync(context, request, route, dispatcher, tracker, clientToken);
         }
         else
         {
-            await HandleBufferedAsync(context, request, route, provider, tracker, clientToken);
+            await HandleBufferedAsync(context, request, route, dispatcher, tracker, clientToken);
         }
     }
 
@@ -125,13 +131,19 @@ internal static class ChatCompletionsEndpoint
         HttpContext context,
         ChatCompletionRequest request,
         ModelRoute route,
-        IChatProvider provider,
+        IChatDispatcher dispatcher,
         CompletionTracker tracker,
         CancellationToken clientToken)
     {
         try
         {
-            ChatCompletionResponse response = await provider.CompleteAsync(request, route, clientToken);
+            BufferedDispatch dispatch = await dispatcher.CompleteAsync(request, route, clientToken);
+            ChatCompletionResponse response = dispatch.Response;
+
+            // Re-pointed at the route that actually answered, which after a fallback is not
+            // the one the caller asked for. The request log is chargeback data: attributing
+            // the spend to the primary provider would bill an account that was never called.
+            tracker.Route = dispatch.Route;
 
             context.Response.StatusCode = StatusCodes.Status200OK;
             context.Response.ContentType = "application/json; charset=utf-8";
@@ -174,35 +186,50 @@ internal static class ChatCompletionsEndpoint
         HttpContext context,
         ChatCompletionRequest request,
         ModelRoute route,
-        IChatProvider provider,
+        IChatDispatcher dispatcher,
         CompletionTracker tracker,
         CancellationToken clientToken)
     {
-        IAsyncEnumerator<ChatCompletionChunk> chunks =
-            provider.StreamAsync(request, route, clientToken).GetAsyncEnumerator(clientToken);
+        StreamedDispatch dispatch;
 
         try
         {
-            bool hasFirst;
-            try
-            {
-                // Deliberately pulled before any response header is written. Until the first
-                // chunk exists the status line is still ours to choose, so an upstream that
-                // rejects the request outright produces a real 4xx or 5xx rather than a
-                // 200 whose body immediately announces a failure. Once headers are on the
-                // wire that option is gone for good.
-                hasFirst = await chunks.MoveNextAsync();
-            }
-            catch (ProviderException ex)
-            {
-                int status = ex.StatusCode is { } upstream && (int)upstream >= 400
-                    ? (int)upstream
-                    : StatusCodes.Status502BadGateway;
+            // The dispatcher pulls the first chunk before returning, deliberately, and before
+            // any response header is written here. Until that chunk exists the status line is
+            // still ours to choose and a failed upstream can still be swapped for another one;
+            // an upstream that rejects the request outright therefore produces a real 4xx or
+            // 5xx rather than a 200 whose body immediately announces a failure. Once headers
+            // are on the wire both options are gone for good.
+            dispatch = await dispatcher.StreamAsync(request, route, clientToken);
+        }
+        catch (ProviderException ex)
+        {
+            int status = ex.StatusCode is { } upstream && (int)upstream >= 400
+                ? (int)upstream
+                : StatusCodes.Status502BadGateway;
 
-                await WriteErrorAsync(context, status, ex.ToErrorResponse());
-                await tracker.CompleteAsync(status, usage: null, errorType: ErrorTypes.Upstream, cancellationToken: CancellationToken.None);
-                return;
-            }
+            await WriteErrorAsync(context, status, ex.ToErrorResponse());
+            await tracker.CompleteAsync(status, usage: null, errorType: ErrorTypes.Upstream, cancellationToken: CancellationToken.None);
+            return;
+        }
+        catch (OperationCanceledException) when (clientToken.IsCancellationRequested)
+        {
+            await tracker.CompleteAsync(
+                StatusCodes.Status499ClientClosedRequest,
+                usage: null,
+                errorType: "client_disconnected",
+                cancellationToken: CancellationToken.None);
+            return;
+        }
+
+        // See HandleBufferedAsync: after a fallback this is not the route the caller asked for.
+        tracker.Route = dispatch.Route;
+
+        IAsyncEnumerator<ChatCompletionChunk> chunks = dispatch.Chunks;
+
+        try
+        {
+            bool hasFirst = dispatch.HasFirstChunk;
 
             StartEventStream(context);
             var writer = new ServerSentEventWriter(context.Response.Body);
@@ -257,7 +284,9 @@ internal static class ChatCompletionsEndpoint
         }
         finally
         {
-            await chunks.DisposeAsync();
+            // Disposes the enumerator the dispatcher handed over, and with it the upstream
+            // response stream.
+            await dispatch.DisposeAsync();
         }
     }
 

@@ -7,6 +7,7 @@ using Gatehouse.Providers.Anthropic;
 using Gatehouse.Providers.AzureOpenAI;
 using Gatehouse.Providers.Google;
 using Gatehouse.Providers.OpenAI;
+using Gatehouse.Resilience;
 using Gatehouse.Routing;
 using Gatehouse.Security;
 using Gatehouse.Storage;
@@ -48,6 +49,12 @@ internal static class GatehouseBuilderExtensions
 
         builder.Services.AddSingleton<IModelRouter, ModelRouter>();
         builder.Services.AddSingleton<IProviderRegistry, ProviderRegistry>();
+
+        // Registered as a singleton because the breaker registry it depends on holds the
+        // health state of every upstream. A scoped dispatcher would hand each request a fresh
+        // set of breakers, which would compile, pass every unit test, and never open a circuit.
+        builder.Services.AddSingleton<ICircuitBreakerRegistry, CircuitBreakerRegistry>();
+        builder.Services.AddSingleton<IChatDispatcher, ResilientChatDispatcher>();
 
         builder.Services.AddSingleton<SqliteRequestLogStore>();
         builder.Services.AddSingleton<IRequestLogStore>(sp => sp.GetRequiredService<SqliteRequestLogStore>());

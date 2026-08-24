@@ -9,11 +9,13 @@
 #   2. list its configured models,
 #   3. proxy a streamed completion, delivering chunks incrementally,
 #   4. proxy a buffered completion and report provider token usage,
-#   5. reject an unconfigured model with 404 rather than 500.
+#   5. reject an unconfigured model with 404 rather than 500,
+#   6. reject an unauthenticated request with 401,
+#   7. start from the sample configuration the README points new users at.
 #
 # Publishing without running the result proves only that the linker exited zero.
 # AOT failures characteristically surface at first use — a missing serializer
-# context, a trimmed type — which is exactly what steps 2 to 5 exercise.
+# context, a trimmed type — which is exactly what steps 2 to 7 exercise.
 
 set -euo pipefail
 
@@ -22,6 +24,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 GATEWAY_PORT=18080
 UPSTREAM_PORT=18081
+
+# A second gateway port, for the step that checks the shipped sample config
+# starts. It runs after the main gateway has been asserted against, but that one
+# is still bound, so it needs a port of its own.
+SAMPLE_PORT=18082
+
+# samples/ lives two levels above .github/scripts.
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 WORK_DIR="$(mktemp -d)"
 
 # On Windows this script runs under Git Bash, where mktemp yields a POSIX path
@@ -46,12 +56,14 @@ fi
 
 STUB_PID=""
 GATEWAY_PID=""
+SAMPLE_PID=""
 
 cleanup() {
     local status=$?
 
     [ -n "$GATEWAY_PID" ] && kill "$GATEWAY_PID" 2>/dev/null || true
     [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null || true
+    [ -n "$SAMPLE_PID" ] && kill "$SAMPLE_PID" 2>/dev/null || true
 
     if [ "$status" -ne 0 ] && [ -f "$WORK_DIR/gateway.log" ]; then
         echo "--- gateway log ---" >&2
@@ -268,6 +280,64 @@ status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
 
 [ "$status" = "401" ] || fail "an unauthenticated request returned HTTP $status, expected 401"
 echo "PASS: unauthenticated request rejected with 401"
+
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+# 7. The shipped sample configuration must actually load
+# ------------------------------------------------------------------------------
+# samples/gatehouse.json is what the README's quick start points people at, and
+# nothing else in CI reads it. It shipped for two phases with a '//' comment key
+# inside the Models dictionary, which binds as a model literally named '//' and
+# makes startup validation reject the file — so the very first thing a new user
+# was told to run could not start. Asserting on it here is cheap and permanent.
+#
+# Startup contacts no provider, so the real endpoints in the sample are never
+# called; this exercises configuration binding and validation only.
+echo "Validating the shipped sample configuration"
+
+SAMPLE_DIR="$WORK_DIR/sample"
+mkdir -p "$SAMPLE_DIR"
+cp "$REPO_ROOT/samples/gatehouse.json" "$SAMPLE_DIR/gatehouse.json"
+
+SAMPLE_DIR_NATIVE="$SAMPLE_DIR"
+if command -v cygpath >/dev/null 2>&1; then
+    SAMPLE_DIR_NATIVE="$(cygpath -m "$SAMPLE_DIR")"
+fi
+
+( cd "$SAMPLE_DIR" && "$BINARY" keys create --name sample-check \
+      --config "$SAMPLE_DIR_NATIVE/gatehouse.json" ) > "$SAMPLE_DIR/keys.txt" 2>&1 \
+    || { cat "$SAMPLE_DIR/keys.txt" >&2; fail "the sample configuration was rejected by 'keys create'"; }
+
+( cd "$SAMPLE_DIR" && "$BINARY" --config "$SAMPLE_DIR_NATIVE/gatehouse.json" \
+      --urls "http://127.0.0.1:$SAMPLE_PORT" ) > "$SAMPLE_DIR/gateway.log" 2>&1 &
+SAMPLE_PID=$!
+
+sample_ready=0
+for _ in $(seq 1 60); do
+    if curl --silent --fail --max-time 2 "http://127.0.0.1:$SAMPLE_PORT/health/ready" >/dev/null; then
+        sample_ready=1
+        break
+    fi
+
+    if ! kill -0 "$SAMPLE_PID" 2>/dev/null; then
+        break
+    fi
+
+    sleep 0.5
+done
+
+if [ "$sample_ready" -ne 1 ]; then
+    echo "--- sample gateway log ---" >&2
+    cat "$SAMPLE_DIR/gateway.log" >&2
+    kill "$SAMPLE_PID" 2>/dev/null || true
+    fail "samples/gatehouse.json did not produce a gateway that starts"
+fi
+
+kill "$SAMPLE_PID" 2>/dev/null || true
+wait "$SAMPLE_PID" 2>/dev/null || true
+echo "PASS: samples/gatehouse.json loads, validates and starts"
 
 # ------------------------------------------------------------------------------
 # The request log must exist. A gateway that serves traffic without recording it

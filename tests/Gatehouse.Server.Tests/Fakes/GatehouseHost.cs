@@ -78,15 +78,63 @@ internal sealed class GatehouseHost : IAsyncDisposable
     /// server starts and presents it on <see cref="Client"/>, which is the same order an
     /// operator follows: issue a key, then start the gateway.
     /// </param>
+    /// <param name="fallbackBaseUrl">
+    /// A second upstream. When supplied, alias <c>fast</c> falls back to a new alias
+    /// <c>backup</c> served by it, which is what the resilience tests exercise. Null leaves the
+    /// configuration exactly as it was before fallbacks existed, so every other test in the
+    /// suite keeps testing a single-route gateway.
+    /// </param>
     public static async Task<GatehouseHost> StartAsync(
         string upstreamBaseUrl,
         string apiKey = "test-upstream-key",
         bool allowPassthrough = false,
         string kind = "openai-compatible",
-        string authenticationMode = "Required")
+        string authenticationMode = "Required",
+        string? fallbackBaseUrl = null)
     {
         string databasePath = Path.Combine(Path.GetTempPath(), $"gatehouse-it-{Guid.NewGuid():N}.db");
         string configPath = Path.Combine(Path.GetTempPath(), $"gatehouse-it-{Guid.NewGuid():N}.json");
+
+        Dictionary<string, object> providers = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["fake"] = new
+            {
+                Kind = kind,
+                BaseUrl = upstreamBaseUrl,
+                ApiKey = apiKey,
+                TimeoutSeconds = 30,
+                AllowPassthrough = allowPassthrough,
+            },
+        };
+
+        Dictionary<string, object> models = new(StringComparer.OrdinalIgnoreCase)
+        {
+            // Alias whose upstream name differs, so translation is observable.
+            ["fast"] = fallbackBaseUrl is null
+                ? new { Provider = "fake", UpstreamModel = "upstream-model-name" }
+                : (object)new
+                {
+                    Provider = "fake",
+                    UpstreamModel = "upstream-model-name",
+                    Fallbacks = new[] { "backup" },
+                },
+
+            // Alias that matches its upstream model, the common case.
+            ["gpt-4o-mini"] = new { Provider = "fake" },
+        };
+
+        if (fallbackBaseUrl is not null)
+        {
+            providers["fallback"] = new
+            {
+                Kind = kind,
+                BaseUrl = fallbackBaseUrl,
+                ApiKey = apiKey,
+                TimeoutSeconds = 30,
+            };
+
+            models["backup"] = new { Provider = "fallback", UpstreamModel = "backup-model-name" };
+        }
 
         // Written as a file rather than injected in-process, because config binding and
         // startup validation are part of what these tests are covering.
@@ -100,25 +148,8 @@ internal sealed class GatehouseHost : IAsyncDisposable
                 Store = new { ConnectionString = $"Data Source={databasePath};Pooling=False", AutoMigrate = true },
                 Telemetry = new { ServiceName = "gatehouse-tests" },
                 Authentication = new { Mode = authenticationMode },
-                Providers = new Dictionary<string, object>
-                {
-                    ["fake"] = new
-                    {
-                        Kind = kind,
-                        BaseUrl = upstreamBaseUrl,
-                        ApiKey = apiKey,
-                        TimeoutSeconds = 30,
-                        AllowPassthrough = allowPassthrough,
-                    },
-                },
-                Models = new Dictionary<string, object>
-                {
-                    // Alias whose upstream name differs, so translation is observable.
-                    ["fast"] = new { Provider = "fake", UpstreamModel = "upstream-model-name" },
-
-                    // Alias that matches its upstream model, the common case.
-                    ["gpt-4o-mini"] = new { Provider = "fake" },
-                },
+                Providers = providers,
+                Models = models,
             },
         };
 

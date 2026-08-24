@@ -8,10 +8,51 @@
     "    Gatehouse__Store__ConnectionString='Data Source=/var/lib/gatehouse/gatehouse.db'",
     "",
     "Keys beginning with // are comments. JSON has none, and .NET configuration ignores",
-    "unrecognised keys, so this is the least surprising convention available."
+    "unrecognised properties, so this is the least surprising convention available.",
+    "",
+    "One catch, and it bites: Providers and Models are DICTIONARIES, not objects. Every",
+    "key inside them is data, so a '//' there binds as a provider or a model literally",
+    "named '//' and startup validation rejects it. Comment individual entries from",
+    "inside, as below - never the Providers or Models block itself.",
+    "",
+    "About Models: the key is what callers put in the 'model' field. Keeping it separate",
+    "from the upstream name is what lets you move traffic between providers - even",
+    "between vendors - without any application redeploying."
   ],
 
   "Gatehouse": {
+
+    "Resilience": {
+      "//": [
+        "Fallback chains and circuit breakers. The defaults are chosen so that turning",
+        "this on changes nothing for a healthy deployment - a breaker that opens under",
+        "normal operation is worse than no breaker, because it turns provider latency",
+        "into gateway outages and teaches operators to switch the feature off.",
+        "",
+        "Fallbacks are inert unless a route declares them; see 'fast' below.",
+        "",
+        "The breaker is keyed per provider AND upstream model, not per provider. On Azure",
+        "quota is per deployment, so a saturated gpt-4o deployment must not take out the",
+        "gpt-4o-mini deployment beside it."
+      ],
+      "FallbacksEnabled": true,
+      "CircuitBreakerEnabled": true,
+
+      "//FailureRatio": "Open when this fraction of the window failed. Half means 'down', not 'degraded'.",
+      "FailureRatio": 0.5,
+
+      "//MinimumThroughput": "Ignore the ratio until the window holds this many calls, so one failure on a quiet gateway is not a 100% failure rate.",
+      "MinimumThroughput": 10,
+
+      "SamplingWindowSeconds": 30,
+
+      "//BreakDurationSeconds": "How long an open circuit refuses traffic before admitting one probe.",
+      "BreakDurationSeconds": 15,
+
+      "//MaxAttempts": "The most upstream calls one client request may cause, including the first. A safety rail: without it a long chain against an outage multiplies one request into that many billed calls.",
+      "MaxAttempts": 4
+    },
+
     "Store": {
       "//": "SQLite is the default and needs no external database. WAL is enabled automatically.",
       "ConnectionString": "Data Source=gatehouse.db",
@@ -94,21 +135,31 @@
     },
 
     "Models": {
-      "//": [
-        "The key is what callers put in the 'model' field. Keeping it separate from the",
-        "upstream name is what lets you move traffic between providers - even between",
-        "vendors - without any application redeploying."
-      ],
-
       "gpt-4o-mini": {
         "//": "Alias and upstream model match, so UpstreamModel can be omitted.",
         "Provider": "openai"
       },
 
       "fast": {
-        "//": "A capability name. Repoint it at another model or vendor at will.",
+        "//": [
+          "A capability name. Repoint it at another model or vendor at will.",
+          "",
+          "Fallbacks are tried in order when the primary fails in a way the upstream is",
+          "responsible for - a timeout, a 429, a 5xx. A malformed request is NOT retried",
+          "elsewhere: it would be malformed at the next provider too, and trying it there",
+          "bills a second account to produce the same rejection.",
+          "",
+          "The list is the whole chain and is not followed transitively. If 'claude-sonnet'",
+          "declares its own fallbacks they are not reached from here, so what you read on",
+          "this entry is every route a request for 'fast' can touch.",
+          "",
+          "Cross-vendor fallback changes which model answers. Configure it where the caller",
+          "wants an answer more than a specific model, and not where output must be",
+          "reproducible."
+        ],
         "Provider": "openai",
-        "UpstreamModel": "gpt-4o-mini"
+        "UpstreamModel": "gpt-4o-mini",
+        "Fallbacks": ["claude-sonnet", "local"]
       },
 
       "gpt-4o-azure": {
