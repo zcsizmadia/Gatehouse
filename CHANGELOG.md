@@ -12,6 +12,37 @@ guarantee takes effect at v1.0 — see the [roadmap](./ROADMAP.md).
 
 ### Added
 
+**Phase 1 — Amazon Bedrock.** The seventh and final provider.
+
+- Built on `AWSSDK.BedrockRuntime`, the only vendor SDK in Gatehouse. ADR 0002
+  predicted it would pass the NativeAOT gate; that has now been verified rather
+  than assumed — an AOT publish of the whole gateway with Bedrock in it emits zero
+  IL warnings with `IL2026` and `IL3050` as errors, and ILC analysed the full graph.
+- Uses the **Converse** API, not InvokeModel. InvokeModel would have meant one
+  request shape, response shape and usage parser per model family inside a single
+  provider — a provider registry hiding inside a provider, defeating the seven
+  provider cap from the inside. With Converse, a new model family on Bedrock needs
+  no Gatehouse change.
+- **Cache-token semantics are derived, not assumed.** Providers disagree about
+  whether cache tokens are additive to the input count or a subset of it, and
+  guessing wrong silently mis-meters every cached request. Bedrock reports a total
+  alongside the parts, so the convention is worked out from the provider's own
+  arithmetic — which matters here because Bedrock is the one provider that could
+  not be verified against a live endpoint during development.
+- Addressed by `Region`, never by `BaseUrl`. Setting a BaseUrl is a startup error
+  rather than silently ignored, and the region is never inferred from the ambient
+  `AWS_REGION`.
+- With no credential variables set, the AWS credential chain resolves an IAM role —
+  the same story as Entra managed identity, storing no credential at all. Setting
+  only one of the two variables is a startup error.
+- The SDK's own retries are switched off (`MaxErrorRetry = 0`). Two retry layers
+  multiply one client request into up to nine billed upstream calls and hide the
+  failures from the circuit breaker.
+- Streaming goes through `IAsyncEnumerable`; the SDK's synchronous and
+  callback-based alternatives would pin a thread per in-flight completion.
+- Known gaps, including that this is **not verified against live Bedrock**, are in
+  [docs/providers/bedrock.md](./docs/providers/bedrock.md).
+
 **Phase 1 — exact-match response caching.**
 
 - Repeated identical requests can be served from memory instead of from a

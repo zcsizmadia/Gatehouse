@@ -42,6 +42,7 @@
   </ItemGroup>
 
   <ItemGroup Label="Azure — managed identity only; see Gatehouse.Providers.AzureOpenAI">
+    <PackageVersion Include="AWSSDK.BedrockRuntime" Version="4.0.101.3" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
   </ItemGroup>
 

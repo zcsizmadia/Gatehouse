@@ -52,7 +52,7 @@ rest.
 | **Azure OpenAI** | same provider + `Azure.Identity` | its REST API *is* OpenAI-compatible, so only addressing and auth differ |
 | **Anthropic** | hand-written HTTP | SDK not trim-annotated, and the cache-token fields must survive |
 | **Google Gemini** | hand-written HTTP | no official SDK exists for this API at all |
-| **Amazon Bedrock** | `AWSSDK.BedrockRuntime` | trim-annotated, and it removes hand-rolled SigV4 signing |
+| **Amazon Bedrock** | `AWSSDK.BedrockRuntime`, Converse API | trim-annotated — since verified by publishing — and it removes hand-rolled SigV4 signing |
 
 ### Azure OpenAI needs no Azure SDK for the data plane
 
@@ -104,3 +104,32 @@ the same class of error unnoticed. The details are in
 
 **Revisit if:** Anthropic or Google ship a trim-annotated SDK, or `Microsoft.Extensions.AI`
 grows a usage model rich enough to carry cache and thinking token breakdowns.
+
+## Follow-up: the Bedrock prediction was tested
+
+Recorded here because an ADR that predicts and never checks is a guess with a
+document around it.
+
+The decision above rested on `AWSSDK.BedrockRuntime` being trim-annotated. When
+Bedrock was actually implemented, that was verified rather than assumed:
+
+- Both `AWSSDK.BedrockRuntime` and `AWSSDK.Core` do carry `IsTrimmable=True`.
+- An AOT publish of the whole gateway with Bedrock included emits **zero** IL
+  warnings, with `IL2026`, `IL2091` and `IL3050` promoted to errors.
+- ILC analysed the full graph — a 168 MB object file — so the zero is coverage,
+  not a skipped step. A probe whose own reflection code tripped `IL2070`
+  confirmed the analyzer was live and simply had nothing to say about the SDK.
+
+Two things the decision did not anticipate, both settled during implementation:
+
+- **Converse rather than InvokeModel.** InvokeModel would have meant one request
+  shape, response shape and usage parser *per model family*, inside a single
+  provider. Converse is Bedrock's own normalisation, so a new model family needs
+  no Gatehouse change. Without this the provider cap would have been defeated
+  from the inside.
+- **The SDK's retries had to be switched off.** `MaxErrorRetry = 0`, because two
+  retry layers multiply one client request into up to nine billed upstream calls
+  and hide failures from the circuit breaker.
+
+The conclusion holds: an SDK is worth it exactly where it is applicable and
+trim-annotated, and Bedrock remains the only provider where both are true.

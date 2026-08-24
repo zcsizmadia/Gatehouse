@@ -38,7 +38,7 @@ The smallest thing a .NET shop can actually deploy.
   - [x] Azure OpenAI, with Entra managed identity
   - [x] Anthropic
   - [x] Google Gemini
-  - [ ] Amazon Bedrock — deferred to its own pull request; see ADR 0002
+  - [x] Amazon Bedrock — via the Converse API; see [providers](./docs/providers/bedrock.md)
 - Virtual keys, fallback chains, circuit breakers
   - [x] Virtual keys, with revocation, expiry and chargeback attribution
   - [x] Fallback chains — per-route, non-transitive; see [resilience](./docs/resilience.md)

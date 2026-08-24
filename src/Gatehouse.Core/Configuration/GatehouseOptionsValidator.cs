@@ -28,6 +28,16 @@ namespace Gatehouse.Configuration;
 /// </remarks>
 public sealed class GatehouseOptionsValidator : IValidateOptions<GatehouseOptions>
 {
+    /// <summary>
+    /// The provider kind that is addressed by region rather than by URL.
+    /// </summary>
+    /// <remarks>
+    /// Duplicated as a literal rather than referenced from the Bedrock provider, because Core
+    /// must not depend on a provider assembly — the dependency runs the other way. Kept in step
+    /// by a test that asserts the two agree.
+    /// </remarks>
+    public const string BedrockProviderKind = "amazon-bedrock";
+
     /// <summary>The shortest upstream timeout that is not simply a misconfiguration.</summary>
     public const int MinTimeoutSeconds = 1;
 
@@ -93,7 +103,45 @@ public sealed class GatehouseOptionsValidator : IValidateOptions<GatehouseOption
                 failures.Add($"Provider '{providerName}' does not specify a kind.");
             }
 
-            if (!Uri.TryCreate(provider.BaseUrl, UriKind.Absolute, out Uri? baseUri))
+            // Bedrock is addressed by region rather than by URL: the AWS SDK derives the endpoint
+            // itself, and that is the point of using it. Demanding a BaseUrl here would force
+            // operators to invent one, and whatever they invented would be ignored.
+            bool addressedByRegion = string.Equals(provider.Kind, BedrockProviderKind, StringComparison.OrdinalIgnoreCase);
+
+            if (addressedByRegion)
+            {
+                if (string.IsNullOrWhiteSpace(provider.Region))
+                {
+                    failures.Add(
+                        $"Provider '{providerName}' is Amazon Bedrock and does not specify a "
+                        + "Region. Model availability and price both vary by region, so there is "
+                        + "no safe default to fall back on.");
+                }
+
+                if (!string.IsNullOrWhiteSpace(provider.BaseUrl))
+                {
+                    failures.Add(
+                        $"Provider '{providerName}' is Amazon Bedrock and specifies a BaseUrl, "
+                        + "which is ignored — the AWS SDK derives the endpoint from Region. "
+                        + "Remove it rather than leave it looking effective.");
+                }
+
+                // One environment variable without the other resolves to no credential at all
+                // and silently falls through to the IAM role, which is a confusing way to find
+                // out that half the configuration was missed.
+                bool hasAccessKey = !string.IsNullOrWhiteSpace(provider.AccessKeyIdEnvironmentVariable);
+                bool hasSecret = !string.IsNullOrWhiteSpace(provider.SecretAccessKeyEnvironmentVariable);
+
+                if (hasAccessKey != hasSecret)
+                {
+                    failures.Add(
+                        $"Provider '{providerName}' sets only one of "
+                        + "AccessKeyIdEnvironmentVariable and SecretAccessKeyEnvironmentVariable. "
+                        + "Set both to use static credentials, or neither to use the AWS "
+                        + "credential chain (an IAM role, which stores no credential at all).");
+                }
+            }
+            else if (!Uri.TryCreate(provider.BaseUrl, UriKind.Absolute, out Uri? baseUri))
             {
                 failures.Add(
                     $"Provider '{providerName}' has a base URL that is not an absolute "

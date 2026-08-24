@@ -209,6 +209,99 @@ public class GatehouseOptionsValidatorTests
         await Assert.That(result.Failures!.Count()).IsGreaterThanOrEqualTo(4);
     }
 
+    [Test]
+    public async Task Accepts_a_bedrock_provider_addressed_by_region_with_no_base_url()
+    {
+        // Bedrock is addressed by region: the AWS SDK derives the endpoint, which is the point
+        // of using it. Requiring a BaseUrl would force operators to invent one that is ignored.
+        GatehouseOptions options = Valid();
+        options.Providers["bedrock"] = new ProviderOptions
+        {
+            Kind = GatehouseOptionsValidator.BedrockProviderKind,
+            Region = "us-east-1",
+        };
+        options.Models["claude"] = new ModelRouteOptions { Provider = "bedrock" };
+
+        ValidateOptionsResult result = _validator.Validate(null, options);
+
+        await Assert.That(result.Succeeded).IsTrue();
+    }
+
+    [Test]
+    public async Task Rejects_a_bedrock_provider_with_no_region()
+    {
+        // Model availability and price both vary by region, so there is no safe default.
+        GatehouseOptions options = Valid();
+        options.Providers["bedrock"] = new ProviderOptions
+        {
+            Kind = GatehouseOptionsValidator.BedrockProviderKind,
+        };
+        options.Models["claude"] = new ModelRouteOptions { Provider = "bedrock" };
+
+        ValidateOptionsResult result = _validator.Validate(null, options);
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(string.Join(" ", result.Failures!)).Contains("Region");
+    }
+
+    [Test]
+    public async Task Rejects_a_bedrock_provider_that_also_sets_a_base_url()
+    {
+        // Silently ignoring it would leave an operator believing they had pointed Bedrock
+        // somewhere. Better to say the setting does nothing than to let it look effective.
+        GatehouseOptions options = Valid();
+        options.Providers["bedrock"] = new ProviderOptions
+        {
+            Kind = GatehouseOptionsValidator.BedrockProviderKind,
+            Region = "us-east-1",
+            BaseUrl = "https://bedrock-runtime.us-east-1.amazonaws.com",
+        };
+        options.Models["claude"] = new ModelRouteOptions { Provider = "bedrock" };
+
+        ValidateOptionsResult result = _validator.Validate(null, options);
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(string.Join(" ", result.Failures!)).Contains("ignored");
+    }
+
+    [Test]
+    public async Task Rejects_half_a_pair_of_aws_credential_variables()
+    {
+        // One without the other resolves to no credential at all and falls through to the IAM
+        // role — a confusing way to discover that half the configuration was missed.
+        GatehouseOptions options = Valid();
+        options.Providers["bedrock"] = new ProviderOptions
+        {
+            Kind = GatehouseOptionsValidator.BedrockProviderKind,
+            Region = "us-east-1",
+            AccessKeyIdEnvironmentVariable = "AWS_ACCESS_KEY_ID",
+        };
+        options.Models["claude"] = new ModelRouteOptions { Provider = "bedrock" };
+
+        ValidateOptionsResult result = _validator.Validate(null, options);
+
+        await Assert.That(result.Succeeded).IsFalse();
+        await Assert.That(string.Join(" ", result.Failures!)).Contains("SecretAccessKeyEnvironmentVariable");
+    }
+
+    [Test]
+    public async Task Accepts_a_bedrock_provider_using_the_ambient_credential_chain()
+    {
+        // Neither variable set is the recommended production shape: an IAM role, which stores
+        // no credential at all.
+        GatehouseOptions options = Valid();
+        options.Providers["bedrock"] = new ProviderOptions
+        {
+            Kind = GatehouseOptionsValidator.BedrockProviderKind,
+            Region = "eu-west-1",
+        };
+        options.Models["claude"] = new ModelRouteOptions { Provider = "bedrock" };
+
+        ValidateOptionsResult result = _validator.Validate(null, options);
+
+        await Assert.That(result.Succeeded).IsTrue();
+    }
+
     private static GatehouseOptions Valid()
     {
         var options = new GatehouseOptions();

@@ -19,6 +19,7 @@ Providers disagree about whether cached prompt tokens are **part of** the prompt
 | -------- | ------------ | ------------------------------- |
 | OpenAI | `cached_tokens` is a **subset** of `prompt_tokens` | none, if mapped directly |
 | Anthropic | `input_tokens` **excludes** both cache fields | prompt under-reported by the whole cached portion |
+| Amazon Bedrock | reports a total, so the relationship is **derived at runtime** | none — but see below, it is the one provider not verified live |
 
 Anthropic documents the arithmetic explicitly:
 
@@ -218,13 +219,39 @@ maps to `stop`, `length`, `content_filter`, `content_filter`.
 
 ---
 
-## Amazon Bedrock
+## Amazon Bedrock — Converse
 
-Served through the official, trim-annotated `AWSSDK.BedrockRuntime` rather than
-hand-rolled HTTP, so there is no wire format to record here. That choice is
-deliberate and explained in [ADR 0002](../adr/0002-provider-integration.md): it
-avoids hand-rolling SigV4 request signing, which is the highest-risk component the
-alternative would have required.
+Served through the official, trim-annotated `AWSSDK.BedrockRuntime`, so there is no
+JSON wire format to record here: the SDK owns the payload, and the reason for
+letting it is in [ADR 0002](../adr/0002-provider-integration.md) — it avoids
+hand-rolling SigV4 request signing, the highest-risk component the alternative
+would have needed. Full notes in [bedrock.md](./bedrock.md).
+
+Two things still belong in this document, because they are wire-level traps
+regardless of who serialises the bytes.
+
+**The usage split, and why Bedrock is handled differently from every other
+provider here.** Bedrock reports `InputTokens`, `OutputTokens`,
+`CacheReadInputTokens`, `CacheWriteInputTokens` *and* `TotalTokens`. Because the
+total is present, the additive-versus-subset question above does not have to be
+answered from documentation — it can be **derived**:
+
+```text
+TotalTokens == InputTokens + OutputTokens                      -> cache counts are a subset
+TotalTokens == InputTokens + OutputTokens + cache counts       -> cache counts are additive
+TotalTokens absent                                             -> additive assumed (documented)
+```
+
+Every other provider in this document has its convention hard-coded from its
+documentation, verified against a live endpoint. Bedrock's could not be: there
+were no AWS credentials during development. Deriving it is what makes that
+acceptable, and `MeteringConsistency` still logs a warning if the arithmetic
+fails whichever branch is taken.
+
+**Usage arrives after the content.** The metadata event carrying `TokenUsage`
+comes at the end of the stream, after `MessageStop`. Gatehouse attaches it to a
+final chunk with an empty delta, which is the same shape OpenAI uses — so a
+client reading usage from the last chunk needs no special handling.
 
 ---
 

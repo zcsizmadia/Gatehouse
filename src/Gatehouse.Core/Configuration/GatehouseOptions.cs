@@ -127,6 +127,33 @@ public sealed class ProviderOptions
     public string? ManagedIdentityClientId { get; set; }
 
     /// <summary>
+    /// The AWS region to call. Amazon Bedrock only.
+    /// </summary>
+    /// <remarks>
+    /// Required for Bedrock, because model availability and price both vary by region and
+    /// guessing one would route traffic to a region the operator did not choose. Not inferred
+    /// from the ambient AWS_REGION either: an environment variable that silently changes which
+    /// region gets billed is not a thing a gateway should read.
+    /// </remarks>
+    public string? Region { get; set; }
+
+    /// <summary>
+    /// Environment variable holding the AWS access key id. Amazon Bedrock only.
+    /// </summary>
+    /// <remarks>
+    /// Leave both this and <see cref="SecretAccessKeyEnvironmentVariable" /> unset to use the
+    /// default AWS credential chain, which on EC2, ECS or EKS resolves an IAM role. That is the
+    /// recommended path and the AWS equivalent of <see cref="UseManagedIdentity" />: it stores
+    /// no credential at all, so there is nothing to rotate or leak.
+    /// </remarks>
+    public string? AccessKeyIdEnvironmentVariable { get; set; }
+
+    /// <summary>
+    /// Environment variable holding the AWS secret access key. Amazon Bedrock only.
+    /// </summary>
+    public string? SecretAccessKeyEnvironmentVariable { get; set; }
+
+    /// <summary>
     /// Whether to expose this provider's native API verbatim under
     /// <c>/passthrough/{provider}/</c>.
     /// </summary>

@@ -136,6 +136,26 @@
         "TimeoutSeconds": 100
       },
 
+
+      "bedrock": {
+        "//": [
+          "Amazon Bedrock, through the Converse API. Addressed by REGION, not BaseUrl - the",
+          "AWS SDK derives the endpoint, and setting a BaseUrl here is rejected at startup",
+          "rather than silently ignored.",
+          "",
+          "With no credential variables set, the AWS credential chain resolves an IAM role on",
+          "EC2, ECS or EKS. That is the recommended path and stores no credential at all, the",
+          "same story as UseManagedIdentity for Azure. To use static keys instead, set BOTH",
+          "AccessKeyIdEnvironmentVariable and SecretAccessKeyEnvironmentVariable.",
+          "",
+          "UpstreamModel on a route is the Bedrock model id, which includes a vendor prefix",
+          "and a version suffix - for example anthropic.claude-sonnet-4-20250514-v1:0."
+        ],
+        "Kind": "amazon-bedrock",
+        "Region": "us-east-1",
+        "TimeoutSeconds": 600
+      },
+
       "anthropic": {
         "//": "Authenticates with x-api-key rather than a bearer token; Gatehouse handles that.",
         "Kind": "anthropic",
@@ -197,6 +217,12 @@
       "claude-sonnet": {
         "Provider": "anthropic",
         "UpstreamModel": "claude-sonnet-5"
+      },
+
+      "claude-bedrock": {
+        "//": "For Bedrock, UpstreamModel is the full model id including the vendor prefix.",
+        "Provider": "bedrock",
+        "UpstreamModel": "anthropic.claude-sonnet-4-20250514-v1:0"
       },
 
       "gemini-flash": {

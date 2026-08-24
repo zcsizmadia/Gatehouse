@@ -6,6 +6,10 @@ using Gatehouse.Configuration;
 using Gatehouse.Providers;
 using Gatehouse.Providers.Anthropic;
 using Gatehouse.Providers.AzureOpenAI;
+using Amazon;
+using Amazon.BedrockRuntime;
+using Amazon.Runtime;
+using Gatehouse.Providers.Bedrock;
 using Gatehouse.Providers.Google;
 using Gatehouse.Providers.OpenAI;
 using Gatehouse.Resilience;
@@ -118,6 +122,10 @@ internal static class GatehouseBuilderExtensions
 
                 case GeminiProvider.Kind:
                     builder.AddGemini(name, provider);
+                    break;
+
+                case BedrockProvider.ProviderName:
+                    builder.AddBedrock(name, provider);
                     break;
 
                 default:
@@ -342,6 +350,72 @@ internal static class GatehouseBuilderExtensions
 
         return provider.ApiKey;
     }
+
+
+    /// <summary>
+    /// Registers the Amazon Bedrock provider.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The only provider that does not go through <c>AddHttpClient</c>: the AWS SDK owns its own
+    /// pipeline, including the SigV4 signing that is the reason for using it. Its client is
+    /// registered as a singleton for the same reason the others share a handler — it pools
+    /// connections, and rebuilding it per request would renegotiate TLS on every completion.
+    /// </para>
+    /// <para>
+    /// Credentials are resolved once, at startup, and deliberately not per request. Reading an
+    /// environment variable on the hot path would make a credential rotation take effect halfway
+    /// through a request rather than at a restart.
+    /// </para>
+    /// </remarks>
+    private static void AddBedrock(
+        this IHostApplicationBuilder builder,
+        string name,
+        ProviderOptions provider)
+    {
+        builder.Services.AddSingleton<IChatProvider>(sp =>
+        {
+            var config = new AmazonBedrockRuntimeConfig
+            {
+                RegionEndpoint = RegionEndpoint.GetBySystemName(provider.Region!),
+
+                // The SDK's own timeout bounds the whole call, which for a streamed completion
+                // is wrong in the same way HttpClient.Timeout is: a long generation is not a
+                // stalled one. Bounded generously here and left to the caller's cancellation
+                // token to end a request the client no longer wants.
+                Timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds),
+
+                // Retries are Gatehouse's job, not the SDK's. Leaving both layers on multiplies
+                // one client request into up to nine upstream calls, all billed, and makes the
+                // circuit breaker's failure counts meaningless because it never sees the
+                // failures the SDK swallowed.
+                MaxErrorRetry = 0,
+            };
+
+            string? accessKeyId = ReadEnvironment(provider.AccessKeyIdEnvironmentVariable);
+            string? secretKey = ReadEnvironment(provider.SecretAccessKeyEnvironmentVariable);
+
+            AmazonBedrockRuntimeClient client = accessKeyId is not null && secretKey is not null
+                ? new AmazonBedrockRuntimeClient(new BasicAWSCredentials(accessKeyId, secretKey), config)
+
+                // The recommended path: an IAM role resolved from the instance, task or pod.
+                // Stores no credential at all.
+                : new AmazonBedrockRuntimeClient(config);
+
+            return new BedrockProvider(
+                client,
+                sp.GetRequiredService<ILogger<BedrockProvider>>(),
+                sp.GetRequiredService<TimeProvider>(),
+                ownsClient: true);
+        });
+    }
+
+    private static string? ReadEnvironment(string? variable) =>
+        string.IsNullOrWhiteSpace(variable)
+            ? null
+            : Environment.GetEnvironmentVariable(variable) is { Length: > 0 } value
+                ? value
+                : null;
 
     private static IServiceCollection TryAddSingletonTimeProvider(this IServiceCollection services)
     {

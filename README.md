@@ -57,8 +57,9 @@ Three more things follow from being a .NET project rather than a Python one:
 **Phase 1 — Core gateway MVP, in progress. Pre-alpha; not suitable for
 production.**
 
-Working today: an OpenAI-compatible streaming endpoint; four provider families
-(OpenAI-compatible, Azure OpenAI with Entra managed identity, Anthropic, Gemini);
+Working today: an OpenAI-compatible streaming endpoint; all seven planned providers
+(OpenAI-compatible covering OpenAI, Ollama, vLLM and Foundry Local; Azure OpenAI with
+Entra managed identity; Anthropic; Gemini; [Amazon Bedrock](./docs/providers/bedrock.md));
 virtual keys with revocation, expiry and chargeback attribution; per-route
 [fallback chains and circuit breakers](./docs/resilience.md); usage metering
 that normalises the providers' disagreeing token semantics and [reconciles against
