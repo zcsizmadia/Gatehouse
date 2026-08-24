@@ -49,6 +49,7 @@ COPY global.json Directory.Build.props Directory.Build.targets Directory.Package
 COPY src/Gatehouse.Core/Gatehouse.Core.csproj                                     src/Gatehouse.Core/
 COPY src/Gatehouse.Providers.Anthropic/Gatehouse.Providers.Anthropic.csproj       src/Gatehouse.Providers.Anthropic/
 COPY src/Gatehouse.Providers.AzureOpenAI/Gatehouse.Providers.AzureOpenAI.csproj   src/Gatehouse.Providers.AzureOpenAI/
+COPY src/Gatehouse.Providers.Bedrock/Gatehouse.Providers.Bedrock.csproj           src/Gatehouse.Providers.Bedrock/
 COPY src/Gatehouse.Providers.Google/Gatehouse.Providers.Google.csproj             src/Gatehouse.Providers.Google/
 COPY src/Gatehouse.Providers.OpenAI/Gatehouse.Providers.OpenAI.csproj             src/Gatehouse.Providers.OpenAI/
 COPY src/Gatehouse.Storage.Sqlite/Gatehouse.Storage.Sqlite.csproj                 src/Gatehouse.Storage.Sqlite/

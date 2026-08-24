@@ -14,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Gatehouse.Core\Gatehouse.Core.csproj" />
     <ProjectReference Include="..\..\src\Gatehouse.Providers.Anthropic\Gatehouse.Providers.Anthropic.csproj" />
+    <ProjectReference Include="..\..\src\Gatehouse.Providers.Bedrock\Gatehouse.Providers.Bedrock.csproj" />
     <ProjectReference Include="..\..\src\Gatehouse.Providers.Google\Gatehouse.Providers.Google.csproj" />
     <ProjectReference Include="..\..\src\Gatehouse.Providers.OpenAI\Gatehouse.Providers.OpenAI.csproj" />
   </ItemGroup>

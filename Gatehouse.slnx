@@ -6,6 +6,7 @@
     <Project Path="src/Gatehouse.Core/Gatehouse.Core.csproj" />
     <Project Path="src/Gatehouse.Providers.Anthropic/Gatehouse.Providers.Anthropic.csproj" />
     <Project Path="src/Gatehouse.Providers.AzureOpenAI/Gatehouse.Providers.AzureOpenAI.csproj" />
+    <Project Path="src/Gatehouse.Providers.Bedrock/Gatehouse.Providers.Bedrock.csproj" />
     <Project Path="src/Gatehouse.Providers.Google/Gatehouse.Providers.Google.csproj" />
     <Project Path="src/Gatehouse.Providers.OpenAI/Gatehouse.Providers.OpenAI.csproj" />
     <Project Path="src/Gatehouse.Server/Gatehouse.Server.csproj" />

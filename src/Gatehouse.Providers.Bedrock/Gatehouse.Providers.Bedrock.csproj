@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>$(GatehouseLibraryTargetFrameworks)</TargetFrameworks>
+    <RootNamespace>Gatehouse.Providers.Bedrock</RootNamespace>
+    <IsPackable>true</IsPackable>
+    <PackageId>Gatehouse.Providers.Bedrock</PackageId>
+    <Description>
+      Amazon Bedrock provider for Gatehouse, built on the official AWS SDK. The one provider
+      where an SDK earns its place: it is trim-annotated, so the NativeAOT gate still passes,
+      and it removes hand-rolled SigV4 request signing.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Gatehouse.Core\Gatehouse.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.BedrockRuntime" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Gatehouse.Providers.Tests" />
+    <InternalsVisibleTo Include="Gatehouse.Server.Tests" />
+  </ItemGroup>
+
+</Project>
