@@ -64,6 +64,9 @@ internal sealed class GatehouseHost : IAsyncDisposable
     /// <summary>The gateway's request log, for asserting on what was recorded.</summary>
     public IRequestLogStore RequestLog => _app.Services.GetRequiredService<IRequestLogStore>();
 
+    /// <summary>The gateway's usage aggregation, for asserting on what was billed.</summary>
+    public IUsageStore Usage => _app.Services.GetRequiredService<IUsageStore>();
+
     /// <summary>Starts a gateway routing two aliases at the given upstream.</summary>
     /// <param name="upstreamBaseUrl">The fake upstream address.</param>
     /// <param name="apiKey">The credential the gateway should present upstream.</param>
@@ -84,13 +87,19 @@ internal sealed class GatehouseHost : IAsyncDisposable
     /// configuration exactly as it was before fallbacks existed, so every other test in the
     /// suite keeps testing a single-route gateway.
     /// </param>
+    /// <param name="cacheEnabled">
+    /// Whether to switch the exact-match response cache on. Off by default, matching the
+    /// shipped default, so every other test in the suite keeps exercising a gateway that
+    /// really calls its provider every time.
+    /// </param>
     public static async Task<GatehouseHost> StartAsync(
         string upstreamBaseUrl,
         string apiKey = "test-upstream-key",
         bool allowPassthrough = false,
         string kind = "openai-compatible",
         string authenticationMode = "Required",
-        string? fallbackBaseUrl = null)
+        string? fallbackBaseUrl = null,
+        bool cacheEnabled = false)
     {
         string databasePath = Path.Combine(Path.GetTempPath(), $"gatehouse-it-{Guid.NewGuid():N}.db");
         string configPath = Path.Combine(Path.GetTempPath(), $"gatehouse-it-{Guid.NewGuid():N}.json");
@@ -148,6 +157,7 @@ internal sealed class GatehouseHost : IAsyncDisposable
                 Store = new { ConnectionString = $"Data Source={databasePath};Pooling=False", AutoMigrate = true },
                 Telemetry = new { ServiceName = "gatehouse-tests" },
                 Authentication = new { Mode = authenticationMode },
+                Cache = new { Enabled = cacheEnabled, TtlSeconds = 3600, MaxEntries = 100 },
                 Providers = providers,
                 Models = models,
             },

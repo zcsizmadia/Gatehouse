@@ -22,6 +22,32 @@
 
   "Gatehouse": {
 
+
+    "Cache": {
+      "//": [
+        "Exact-match response caching. OFF by default and left off here, deliberately:",
+        "caching changes observable behaviour. Repeated identical requests stop reaching the",
+        "provider, so they stop being sampled and start returning a fixed answer. That is",
+        "usually wanted - but not as a surprise after an upgrade.",
+        "",
+        "Exact match ONLY. Gatehouse never serves an answer to a question that merely",
+        "resembles a stored one; see docs/caching.md for why semantic caching is a Phase 4",
+        "question rather than a quick win.",
+        "",
+        "A cache hit is never counted as provider usage. The tokens are real but nobody was",
+        "billed, so 'gatehouse usage' reports them as avoided rather than as spend."
+      ],
+      "Enabled": false,
+      "TtlSeconds": 3600,
+
+      "//MaxEntries": "With MaxResponseBytes this is the memory bound: worst case is roughly the product of the two.",
+      "MaxEntries": 10000,
+      "MaxResponseBytes": 262144,
+
+      "//ScopeToOrganisation": "On by default. Costs hit rate, and stops one tenant's spend subsidising another's. Turn it off for a single-tenant deployment.",
+      "ScopeToOrganisation": true
+    },
+
     "Resilience": {
       "//": [
         "Fallback chains and circuit breakers. The defaults are chosen so that turning",

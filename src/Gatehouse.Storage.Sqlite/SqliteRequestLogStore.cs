@@ -95,7 +95,8 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore,
                    status_code, prompt_tokens, completion_tokens, usage_is_provider_reported,
                    duration_ms, time_to_first_chunk_ms, error_type,
                    virtual_key_id, organisation, team, application,
-                   prompt_tokens_cached, prompt_tokens_cache_write, metered
+                   prompt_tokens_cached, prompt_tokens_cache_write, metered,
+                   served_from_cache
             FROM request_log
             ORDER BY timestamp_utc DESC
             LIMIT $limit;
@@ -129,6 +130,7 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore,
                 CachedPromptTokens = (int)reader.GetInt64(17),
                 CacheCreationTokens = (int)reader.GetInt64(18),
                 Metered = reader.GetInt64(19) != 0,
+                ServedFromCache = reader.GetInt64(20) != 0,
             });
         }
 
@@ -173,20 +175,37 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore,
             SELECT provider,
                    COALESCE(upstream_model, '(unspecified)')          AS model,
                    COUNT(*)                                           AS requests,
-                   SUM(CASE WHEN metered = 1
+                   SUM(CASE WHEN served_from_cache = 0
+                             AND metered = 1
                              AND usage_is_provider_reported = 1
                              AND (prompt_tokens + completion_tokens) > 0
                             THEN 1 ELSE 0 END)                        AS reported_requests,
-                   SUM(CASE WHEN metered = 1
+                   SUM(CASE WHEN served_from_cache = 0
+                             AND metered = 1
                              AND (usage_is_provider_reported = 0
                                   OR (prompt_tokens + completion_tokens) = 0)
                             THEN 1 ELSE 0 END)                        AS requests_without_usage,
-                   SUM(CASE WHEN metered = 0 THEN 1 ELSE 0 END)       AS unmetered_requests,
+                   SUM(CASE WHEN served_from_cache = 0 AND metered = 0
+                            THEN 1 ELSE 0 END)                        AS unmetered_requests,
                    SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) AS failed_requests,
-                   SUM(prompt_tokens)                                 AS prompt_tokens,
-                   SUM(completion_tokens)                             AS completion_tokens,
-                   SUM(prompt_tokens_cached)                          AS prompt_tokens_cached,
-                   SUM(prompt_tokens_cache_write)                     AS prompt_tokens_cache_write
+
+                   -- Every token sum below excludes cache hits. Those tokens are real but no
+                   -- provider billed for them, and including them would make a reconciliation
+                   -- report Gatehouse recording more than the invoice charged.
+                   SUM(CASE WHEN served_from_cache = 0
+                            THEN prompt_tokens ELSE 0 END)            AS prompt_tokens,
+                   SUM(CASE WHEN served_from_cache = 0
+                            THEN completion_tokens ELSE 0 END)        AS completion_tokens,
+                   SUM(CASE WHEN served_from_cache = 0
+                            THEN prompt_tokens_cached ELSE 0 END)     AS prompt_tokens_cached,
+                   SUM(CASE WHEN served_from_cache = 0
+                            THEN prompt_tokens_cache_write ELSE 0 END) AS prompt_tokens_cache_write,
+
+                   -- ...and are reported here instead, as the saving.
+                   SUM(CASE WHEN served_from_cache = 1 THEN 1 ELSE 0 END) AS cache_hits,
+                   SUM(CASE WHEN served_from_cache = 1
+                            THEN prompt_tokens + completion_tokens
+                            ELSE 0 END)                               AS tokens_avoided
               FROM request_log
              WHERE timestamp_utc >= $from
                AND timestamp_utc <  $to
@@ -218,6 +237,8 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore,
                 CompletionTokens = reader.GetInt64(8),
                 CachedPromptTokens = reader.GetInt64(9),
                 CacheCreationTokens = reader.GetInt64(10),
+                CacheHits = reader.GetInt64(11),
+                TokensAvoided = reader.GetInt64(12),
             });
         }
 
@@ -375,13 +396,13 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore,
                     status_code, prompt_tokens, completion_tokens, usage_is_provider_reported,
                     duration_ms, time_to_first_chunk_ms, error_type,
                     virtual_key_id, organisation, team, application,
-                    prompt_tokens_cached, prompt_tokens_cache_write, metered
+                    prompt_tokens_cached, prompt_tokens_cache_write, metered, served_from_cache
                 ) VALUES (
                     $id, $timestamp, $requestedModel, $provider, $upstreamModel, $streamed,
                     $statusCode, $promptTokens, $completionTokens, $usageIsProviderReported,
                     $durationMs, $timeToFirstChunkMs, $errorType,
                     $virtualKeyId, $organisation, $team, $application,
-                    $cachedPromptTokens, $cacheCreationTokens, $metered
+                    $cachedPromptTokens, $cacheCreationTokens, $metered, $servedFromCache
                 );
                 """;
 
@@ -407,6 +428,7 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore,
             SqliteParameter cachedPromptTokens = command.Parameters.Add("$cachedPromptTokens", SqliteType.Integer);
             SqliteParameter cacheCreationTokens = command.Parameters.Add("$cacheCreationTokens", SqliteType.Integer);
             SqliteParameter metered = command.Parameters.Add("$metered", SqliteType.Integer);
+            SqliteParameter servedFromCache = command.Parameters.Add("$servedFromCache", SqliteType.Integer);
 
             foreach (RequestRecord record in batch)
             {
@@ -430,6 +452,7 @@ public sealed class SqliteRequestLogStore : BackgroundService, IRequestLogStore,
                 cachedPromptTokens.Value = record.CachedPromptTokens;
                 cacheCreationTokens.Value = record.CacheCreationTokens;
                 metered.Value = record.Metered ? 1 : 0;
+                servedFromCache.Value = record.ServedFromCache ? 1 : 0;
 
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }

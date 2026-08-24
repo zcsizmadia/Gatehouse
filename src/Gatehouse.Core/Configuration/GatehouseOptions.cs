@@ -42,6 +42,9 @@ public sealed class GatehouseOptions
     /// <summary>How Gatehouse behaves when an upstream misbehaves.</summary>
     public ResilienceOptions Resilience { get; set; } = new();
 
+    /// <summary>Exact-match response caching.</summary>
+    public CacheOptions Cache { get; set; } = new();
+
     /// <summary>Where request records are persisted.</summary>
     public StoreOptions Store { get; set; } = new();
 
@@ -309,4 +312,72 @@ public sealed class ResilienceOptions
     /// there are links. Four is two spare providers and a stop.
     /// </remarks>
     public int MaxAttempts { get; set; } = 4;
+}
+
+/// <summary>Exact-match response caching.</summary>
+/// <remarks>
+/// <para>
+/// Off by default, deliberately. Caching changes observable behaviour: repeated identical
+/// requests stop reaching the provider, so they stop being sampled and start returning a
+/// fixed answer, and latency for those falls to almost nothing. Every one of those is
+/// usually wanted — but a gateway that starts doing it because someone upgraded is a gateway
+/// that changed the output of a caller's application without being asked.
+/// </para>
+/// <para>
+/// Note what caching does <em>not</em> do here: it never serves an answer to a question that
+/// merely resembles the stored one. See <c>ResponseCache</c> for why semantic caching is a
+/// Phase 4 question rather than a quick win.
+/// </para>
+/// </remarks>
+public sealed class CacheOptions
+{
+    /// <summary>Whether to serve repeated identical requests from memory.</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>
+    /// How long an entry stays servable.
+    /// </summary>
+    /// <remarks>
+    /// An hour. Long enough to absorb the retry storms and duplicated prompts that make
+    /// caching worth having, short enough that a model or deployment change behind an alias
+    /// stops being papered over within a working session.
+    /// </remarks>
+    public int TtlSeconds { get; set; } = 3600;
+
+    /// <summary>
+    /// The most entries to hold before the least recently used is dropped.
+    /// </summary>
+    /// <remarks>
+    /// With <see cref="MaxResponseBytes"/> this is the memory bound: worst case is roughly
+    /// the product of the two. The defaults come to a few hundred megabytes at absolute
+    /// worst and a small fraction of that in practice.
+    /// </remarks>
+    public int MaxEntries { get; set; } = 10_000;
+
+    /// <summary>The largest response worth storing.</summary>
+    /// <remarks>
+    /// Responses above this are not cached at all rather than cached and immediately evicted,
+    /// because one very long completion would otherwise flush a cache full of useful short
+    /// ones.
+    /// </remarks>
+    public int MaxResponseBytes { get; set; } = 256 * 1024;
+
+    /// <summary>
+    /// Whether an entry is only servable to the organisation that created it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// On by default, which costs hit rate and is still the right default for this product. A
+    /// shared cache means one tenant's spend subsidises another's, that the second tenant's
+    /// audit trail shows a completion it never paid for, and that response time reveals
+    /// whether somebody else has asked a given question before. None of those is catastrophic
+    /// and all of them are surprises, and a governance tool should not hand an operator a
+    /// surprise it could have avoided by default.
+    /// </para>
+    /// <para>
+    /// Turn it off for a single-tenant deployment, where there is no boundary to cross and the
+    /// hit rate is the only thing that matters.
+    /// </para>
+    /// </remarks>
+    public bool ScopeToOrganisation { get; set; } = true;
 }

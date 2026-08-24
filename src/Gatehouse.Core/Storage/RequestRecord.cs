@@ -82,6 +82,26 @@ public sealed record RequestRecord
     public bool Metered { get; init; } = true;
 
     /// <summary>
+    /// Whether this request was answered from Gatehouse's own response cache rather than by a
+    /// provider.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Load-bearing for billing, not a statistic. The token counts on a cache hit are real —
+    /// they describe the response — but <em>no provider billed for them</em>. Counting them as
+    /// consumption would inflate recorded usage by exactly the amount the cache saved, so a
+    /// reconciliation would report that Gatehouse recorded more than the provider charged: the
+    /// over-count direction, which is the one that overcharges an internal team.
+    /// </para>
+    /// <para>
+    /// The usage aggregation therefore excludes these rows from the token totals and reports
+    /// them separately as tokens avoided. The row itself is still written in full, because the
+    /// audit trail has to answer "who asked what" whether or not the answer came off a disk.
+    /// </para>
+    /// </remarks>
+    public bool ServedFromCache { get; init; }
+
+    /// <summary>
     /// Whether the token counts came from the provider rather than local estimation.
     /// </summary>
     /// <remarks>

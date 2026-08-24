@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using Azure.Core;
 using Azure.Identity;
+using Gatehouse.Caching;
 using Gatehouse.Configuration;
 using Gatehouse.Providers;
 using Gatehouse.Providers.Anthropic;
@@ -55,6 +56,10 @@ internal static class GatehouseBuilderExtensions
         // set of breakers, which would compile, pass every unit test, and never open a circuit.
         builder.Services.AddSingleton<ICircuitBreakerRegistry, CircuitBreakerRegistry>();
         builder.Services.AddSingleton<IChatDispatcher, ResilientChatDispatcher>();
+
+        // Singleton: the cache IS the shared state. A scoped one would give every request an
+        // empty cache, which would compile, pass, and never once produce a hit.
+        builder.Services.AddSingleton<IResponseCache, ResponseCache>();
 
         builder.Services.AddSingleton<SqliteRequestLogStore>();
         builder.Services.AddSingleton<IRequestLogStore>(sp => sp.GetRequiredService<SqliteRequestLogStore>());

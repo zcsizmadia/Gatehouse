@@ -93,6 +93,48 @@ public static class GatehouseTelemetry
         unit: "{request}",
         description: "Upstream calls skipped because the circuit for that upstream was open.");
 
+    /// <summary>Requests served from the exact-match cache.</summary>
+    public static Counter<long> CacheHits { get; } = Meter.CreateCounter<long>(
+        name: "gatehouse.cache.hits",
+        unit: "{request}",
+        description: "Requests served from the response cache without reaching a provider.");
+
+    /// <summary>Cacheable requests that had to go upstream.</summary>
+    public static Counter<long> CacheMisses { get; } = Meter.CreateCounter<long>(
+        name: "gatehouse.cache.misses",
+        unit: "{request}",
+        description: "Cacheable requests that were not in the response cache.");
+
+    /// <summary>
+    /// Tokens a cache hit avoided paying for.
+    /// </summary>
+    /// <remarks>
+    /// The saving, and the only cache metric with money attached. Reported separately from
+    /// <c>gen_ai.client.token.usage</c> on purpose: these tokens were never billed, and adding
+    /// them to consumption would inflate a chargeback report by exactly the amount the cache
+    /// saved — turning a cost win into an apparent overspend.
+    /// </remarks>
+    public static Counter<long> CacheTokensAvoided { get; } = Meter.CreateCounter<long>(
+        name: "gatehouse.cache.tokens_avoided",
+        unit: "{token}",
+        description: "Tokens that a cache hit meant were never billed by a provider.");
+
+    /// <summary>Entries dropped to stay within the cache's entry bound.</summary>
+    public static Counter<long> CacheEvictions { get; } = Meter.CreateCounter<long>(
+        name: "gatehouse.cache.evictions",
+        unit: "{entry}",
+        description: "Cache entries evicted because the cache was at its entry limit.");
+
+    /// <summary>Responses not cached because they exceeded the size limit.</summary>
+    /// <remarks>
+    /// Worth watching: a workload whose responses are all just over the limit gets the cost of
+    /// a cache and none of the benefit, and nothing else in the metrics would say so.
+    /// </remarks>
+    public static Counter<long> CacheSkippedTooLarge { get; } = Meter.CreateCounter<long>(
+        name: "gatehouse.cache.skipped_too_large",
+        unit: "{response}",
+        description: "Responses not cached because they exceeded Cache.MaxResponseBytes.");
+
     /// <summary>
     /// OpenTelemetry GenAI semantic-convention attribute names.
     /// </summary>
