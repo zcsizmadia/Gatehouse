@@ -54,10 +54,22 @@ Three more things follow from being a .NET project rather than a Python one:
 
 ## Status
 
-**Phase 0 — Foundations.** Pre-alpha. The architecture spike streams a completion
-through a single binary on Windows, Linux and Docker. Not yet suitable for
-production. See the [roadmap](./ROADMAP.md) for what lands when, and
-[what Gatehouse is not](#what-gatehouse-is-not-yet) below.
+**Phase 1 — Core gateway MVP, in progress. Pre-alpha; not suitable for
+production.**
+
+Working today: an OpenAI-compatible streaming endpoint; four provider families
+(OpenAI-compatible, Azure OpenAI with Entra managed identity, Anthropic, Gemini);
+virtual keys with revocation, expiry and chargeback attribution; usage metering
+that normalises the providers' disagreeing token semantics; OpenTelemetry.
+
+Not working yet, and load-bearing if you are evaluating: **no budgets, no spend
+limits, no per-key model restrictions, no RBAC, no SSO, no rate limiting.** A
+valid key can call any configured model without limit.
+
+The description above is what Gatehouse is *for*. For what it currently
+*enforces*, read the [capability table in SECURITY.md](./SECURITY.md#what-is-actually-implemented) —
+it is the authoritative answer and it distinguishes shipped controls from planned
+ones. The [roadmap](./ROADMAP.md) says when the rest lands.
 
 ## Quick start
 
