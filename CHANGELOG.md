@@ -10,6 +10,19 @@ guarantee takes effect at v1.0 — see the [roadmap](./ROADMAP.md).
 
 ## [Unreleased]
 
+## [0.1.0-beta.1] — 2026-08-24
+
+First release. Everything in Phase 1 of the [roadmap](./ROADMAP.md), and nothing
+from Phase 2 — read the [capability table in SECURITY.md](./SECURITY.md#what-is-actually-implemented)
+before deploying this, because the governance features Gatehouse exists for are
+not in it yet. There are **no budgets, no spend limits, no per-key model
+restrictions, no RBAC, no SSO and no rate limiting**: a valid key can call any
+configured model without limit.
+
+Beta rather than alpha because the surface is now the one Phase 1 planned and the
+supply-chain promises are all real. Pre-1.0 still means the API may change in any
+minor release.
+
 ### Added
 
 **Phase 1 — Amazon Bedrock.** The seventh and final provider.
@@ -202,4 +215,5 @@ guarantee takes effect at v1.0 — see the [roadmap](./ROADMAP.md).
   Sigstore signing and SLSA provenance on release, CodeQL and OpenSSF Scorecard
   in CI.
 
-[Unreleased]: https://github.com/zcsizmadia/Gatehouse/commits/main
+[Unreleased]: https://github.com/zcsizmadia/Gatehouse/compare/v0.1.0-beta.1...HEAD
+[0.1.0-beta.1]: https://github.com/zcsizmadia/Gatehouse/releases/tag/v0.1.0-beta.1

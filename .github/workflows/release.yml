@@ -187,3 +187,92 @@ jobs:
             Every binary ships with a Sigstore bundle, a CycloneDX SBOM and SLSA
             build provenance. If verification fails, treat the artifact as
             compromised and tell us.
+
+  # ---------------------------------------------------------------------------
+  # Push the libraries to nuget.org.
+  #
+  # Deliberately last, and gated on `publish` rather than on `build`. A GitHub
+  # release can be deleted; a NuGet package cannot. It can be unlisted, which hides
+  # it from search and leaves it installable forever by anyone who names the
+  # version. So everything revocable happens first, and the one irreversible step
+  # runs only once the binaries, the smoke tests, the signatures and the release
+  # have all succeeded.
+  #
+  # The Server is not packable: it ships as the signed binaries above, not as a
+  # library. Only the seven libraries a .NET shop would reference go here.
+  # ---------------------------------------------------------------------------
+  nuget:
+    name: Push to NuGet
+    needs: publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Pack
+        # VersionSuffix is cleared for the same reason as the binary build: the
+        # default appends "alpha" to untagged builds, and a package labelled
+        # 0.1.0-alpha when the tag said beta.1 is a mistake that cannot be taken back.
+        run: >
+          dotnet pack Gatehouse.slnx
+          --configuration Release
+          -p:VersionPrefix=${{ steps.version.outputs.version }}
+          -p:VersionSuffix=
+          --output ./packages
+
+      - name: Verify the packages carry the tagged version
+        shell: bash
+        # The last chance to catch a version mismatch. After the next step the
+        # version is public forever, so this compares what was actually produced
+        # against what the tag asked for rather than trusting the pack arguments.
+        run: |
+          set -euo pipefail
+          expected="${{ steps.version.outputs.version }}"
+          failed=0
+
+          shopt -s nullglob
+          packages=(./packages/*.nupkg)
+
+          if [ ${#packages[@]} -eq 0 ]; then
+            echo "::error::pack produced no packages"
+            exit 1
+          fi
+
+          for package in "${packages[@]}"; do
+            case "$(basename "$package")" in
+              *".$expected.nupkg") echo "ok   $(basename "$package")" ;;
+              *) echo "::error::$(basename "$package") is not version $expected"; failed=1 ;;
+            esac
+          done
+
+          [ "$failed" -eq 0 ] || exit 1
+          echo "${#packages[@]} package(s) at $expected"
+
+      - name: Push
+        # --skip-duplicate so re-running a failed release is safe: a version already
+        # on nuget.org is left alone instead of failing the job. The matching .snupkg
+        # symbol package is picked up automatically from the same directory.
+        run: >
+          dotnet nuget push "./packages/*.nupkg"
+          --source https://api.nuget.org/v3/index.json
+          --api-key ${{ secrets.NUGET_API_KEY }}
+          --skip-duplicate
