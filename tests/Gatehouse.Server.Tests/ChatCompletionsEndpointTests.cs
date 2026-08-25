@@ -39,49 +39,106 @@ public class ChatCompletionsEndpointTests
     {
         // The property the whole streaming design exists for. If anything on the path buffers,
         // the text still arrives intact and every other test in this file still passes — only
-        // the *timing* changes.
+        // the delivery *timing* changes.
         //
-        // Measured server-side, from the gateway's own time-to-first-chunk, rather than from
-        // inter-chunk arrival times at the client. Client-observed spacing cannot distinguish
-        // gateway buffering from client scheduling: if the test task is descheduled between
-        // receiving response headers and reading the body, the socket buffer accumulates the
-        // whole stream and the observed spacing collapses to nothing for a perfectly healthy
-        // gateway. That made the previous version of this test flaky under parallel load.
+        // Proved causally rather than by clock, because the clock version of this test failed
+        // three times for three different reasons. It measured client-side inter-chunk spacing
+        // (which collapses to nothing when the test task is descheduled and the socket buffer
+        // fills), then a server-side ratio (which moves the same way under load as it does
+        // under a real bug), then a server-side interval — which still landed at 257 ms against
+        // a 300 ms threshold on a loaded Windows runner where the design expected 600 ms.
         //
-        // Time to first chunk is recorded inside the gateway after the flush completes, so it
-        // is immune to client scheduling and still catches a provider or SSE-writer that
-        // accumulates before writing.
+        // There is no threshold here at all. The upstream is held open before its final chunk,
+        // so while that gate is closed the upstream response provably has not finished. A chunk
+        // reaching the client in that window therefore cannot have been buffered until the
+        // stream ended — which is exactly the claim under test, stated as a fact about ordering
+        // instead of a fact about elapsed time.
+        //
+        // The asymmetry is deliberate and is the right way round: passing is fast and
+        // deterministic, and only genuine buffering pays the timeout.
         await using FakeUpstream upstream = await FakeUpstream.StartAsync();
         upstream.Chunks = ["one", "two", "three", "four"];
-        upstream.ChunkDelay = TimeSpan.FromMilliseconds(200);
+
+        var finalChunk = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        upstream.FinalChunkGate = finalChunk;
 
         await using GatehouseHost gateway = await GatehouseHost.StartAsync(upstream.BaseAddress);
 
-        StreamedCompletion result = await ReadStreamAsync(gateway, "gpt-4o-mini");
-        await Assert.That(result.Text).IsEqualTo("onetwothreefour");
+        using HttpRequestMessage request = StreamRequest("gpt-4o-mini");
 
-        RequestRecord record = await WaitForRecordAsync(gateway);
-        await Assert.That(record.TimeToFirstChunk).IsNotNull();
+        // Generous, because it is only ever paid by a failing run. A buffering gateway never
+        // sends the first chunk, so this is what turns that deadlock into a verdict.
+        //
+        // It covers SendAsync as well as the read loop, and that matters: a gateway that
+        // buffers hard enough never flushes its response headers either, so the request hangs
+        // before there is anything to read. Left to HttpClient.Timeout that surfaces after a
+        // hundred seconds as a bare TaskCanceledException naming nothing — confirmed by
+        // temporarily making the endpoint buffer and watching exactly that happen.
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
-        // How much of the request happened *after* the first chunk was flushed.
-        //
-        // Expressed as an interval rather than a ratio of the total, because the total includes
-        // fixed overhead — routing, the upstream connection — that varies hugely with machine
-        // load. A ratio test failed on a Windows runner at 475 ms / 907 ms: both numbers were
-        // inflated by ~275 ms of setup, which pushed the ratio past a half even though the
-        // stream was working perfectly. Subtracting cancels that overhead entirely.
-        //
-        // Four chunks at 200 ms means roughly 600 ms should elapse after the first one. A
-        // gateway that buffered would flush nothing until the upstream finished, leaving this
-        // interval at approximately zero — so the two cases are separated by the whole
-        // measurement, not by a threshold that has to be tuned.
-        TimeSpan afterFirstChunk = record.Duration - record.TimeToFirstChunk!.Value;
-        await Assert.That(afterFirstChunk).IsGreaterThan(TimeSpan.FromMilliseconds(300));
+        var text = new StringBuilder();
+        int frames = 0;
+        bool deliveredWhileUpstreamStillOpen = false;
+
+        try
+        {
+            using HttpResponseMessage response = await gateway.Client.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellation.Token);
+
+            await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
+
+            await using Stream body = await response.Content.ReadAsStreamAsync(cancellation.Token);
+
+            await foreach (ServerSentEvent sse in ServerSentEventReader.ReadAsync(body, cancellation.Token))
+            {
+                if (sse.IsDone)
+                {
+                    break;
+                }
+
+                ChatCompletionChunk? chunk = JsonSerializer.Deserialize(
+                    sse.Data,
+                    GatehouseJsonContext.Default.ChatCompletionChunk);
+
+                if (chunk?.Choices.Count > 0)
+                {
+                    text.Append(chunk.Choices[0].Delta.Content);
+                }
+
+                frames++;
+
+                if (frames == 1)
+                {
+                    // Reached the client with the gate still closed, so the upstream had not
+                    // finished. Recorded before releasing, because releasing is what makes the
+                    // rest of the stream arrive.
+                    deliveredWhileUpstreamStillOpen = true;
+                    finalChunk.SetResult();
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // Swallowed on purpose. Running out of time here *is* the buffering verdict, and
+            // the assertion below states it in those terms — which is a far more useful
+            // failure message than a cancellation stack trace.
+        }
+        finally
+        {
+            // Never leave the upstream request handler parked on the gate, whatever happened
+            // above: a leaked server task outlives the test and can wedge the whole fixture.
+            finalChunk.TrySetResult();
+        }
+
+        await Assert.That(deliveredWhileUpstreamStillOpen).IsTrue();
+        await Assert.That(text.ToString()).IsEqualTo("onetwothreefour");
 
         // Each chunk must also be its own SSE frame. One frame containing everything would mean
-        // the relay concatenated the stream before writing it, which the timing check above
+        // the relay concatenated the stream before writing it, which the ordering check above
         // would not notice.
-        await Assert.That(result.ChunkOffsets.Count).IsGreaterThanOrEqualTo(4);
+        await Assert.That(frames).IsGreaterThanOrEqualTo(4);
     }
 
     [Test]

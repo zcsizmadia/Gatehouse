@@ -49,6 +49,16 @@ internal sealed class FakeUpstream : IAsyncDisposable
     /// <summary>Fails after this many chunks, simulating an upstream dying mid-generation.</summary>
     public int? FailAfterChunk { get; set; }
 
+    /// <summary>
+    /// When set, the upstream waits on this before sending its final chunk.
+    /// </summary>
+    /// <remarks>
+    /// A test holding this gate knows, as a fact rather than as an inference from elapsed
+    /// time, that the upstream response is still open. That turns "did the gateway stream or
+    /// buffer?" from a timing question into a causal one.
+    /// </remarks>
+    public TaskCompletionSource? FinalChunkGate { get; set; }
+
     /// <summary>How many completion requests this upstream received.</summary>
     /// <remarks>
     /// The assertion that matters for fallback: a route that was skipped because its circuit
@@ -136,6 +146,16 @@ internal sealed class FakeUpstream : IAsyncDisposable
             }
 
             bool isLast = i == Chunks.Count - 1;
+
+            // Held here, before the final chunk, when a test supplies a gate. This is what
+            // lets a test prove incremental delivery by causality instead of by clock: while
+            // this task is uncompleted the upstream stream demonstrably has not finished, so
+            // a chunk arriving at the client in the meantime cannot have been buffered until
+            // the end. See Delivers_chunks_as_they_are_produced_rather_than_in_one_burst.
+            if (isLast && FinalChunkGate is { } gate)
+            {
+                await gate.Task.WaitAsync(context.RequestAborted);
+            }
 
             var chunk = new ChatCompletionChunk
             {
