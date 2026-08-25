@@ -40,6 +40,19 @@ updates:
     labels: [dependencies, github-actions]
     commit-message:
       prefix: "ci(deps)"
+    groups:
+      # codeql-action's steps share a configuration file whose format is versioned
+      # with the action. init writes it and analyze reads it, so a bump that moves
+      # one and not the other fails with "Loaded a configuration file for version
+      # '4.37.8', but running version '3.37.8'" — and neither half can go green on
+      # its own. That is exactly what happened in #22 and #25.
+      #
+      # upload-sarif is in the group as well. It lives in a different workflow, so
+      # nothing forces it to agree today, but it is the same action and leaving it
+      # to drift is how the next version of this bug arrives.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
 
   - package-ecosystem: docker
     directory: /deploy/docker
