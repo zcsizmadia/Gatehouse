@@ -29,6 +29,16 @@ namespace Gatehouse.Server.Tests.Fakes;
 /// </remarks>
 internal sealed class FakeAnthropicUpstream : IAsyncDisposable
 {
+    /// <summary>
+    /// The JSON null Anthropic sends for <c>stop_reason</c> until a message actually stops.
+    /// </summary>
+    /// <remarks>
+    /// A named constant rather than a <c>(string?)null</c> cast at each use. The cast was only
+    /// there to give an anonymous-type member a type, which is a mechanical reason that told a
+    /// reader nothing; this says what the null means.
+    /// </remarks>
+    private const string? NotStoppedYet = null;
+
     private readonly WebApplication _app;
 
     private FakeAnthropicUpstream(WebApplication app, string baseAddress)
@@ -129,7 +139,7 @@ internal sealed class FakeAnthropicUpstream : IAsyncDisposable
                 role = "assistant",
                 model = "claude-fake-1",
                 content = Array.Empty<object>(),
-                stop_reason = (string?)null,
+                stop_reason = NotStoppedYet,
                 usage = new
                 {
                     input_tokens = InputTokens,
@@ -167,7 +177,7 @@ internal sealed class FakeAnthropicUpstream : IAsyncDisposable
             await WriteEventAsync(context, "message_delta", new
             {
                 type = "message_delta",
-                delta = new { stop_reason = (string?)null },
+                delta = new { stop_reason = NotStoppedYet },
                 usage = new { output_tokens = cumulative },
             });
         }

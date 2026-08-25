@@ -234,15 +234,26 @@ public class BedrockTranslatorTests
     {
         // Whichever branch is taken, the result has to satisfy the invariant the reconciliation
         // depends on: the cache subsets fit inside the prompt count, and the total adds up.
-        foreach (BedrockUsage reported in (BedrockUsage[])
+        BedrockUsage[] reportedShapes =
         [
+            // No cache involved.
             new() { InputTokens = 100, OutputTokens = 20, TotalTokens = 120 },
+
+            // Additive: the total accounts for the cache counts on top of the input.
             new() { InputTokens = 100, OutputTokens = 20, CacheReadInputTokens = 500, CacheWriteInputTokens = 50, TotalTokens = 670 },
+
+            // Subset: the total is input plus output, so the cache count is already inside.
             new() { InputTokens = 100, OutputTokens = 20, CacheReadInputTokens = 80, TotalTokens = 120 },
+
+            // No total reported, so additive is assumed.
             new() { InputTokens = 100, OutputTokens = 20, CacheReadInputTokens = 500 },
-        ])
+        ];
+
+        foreach (BedrockUsage reported in reportedShapes)
         {
             GatehouseUsage? usage = BedrockTranslator.ToTokenUsage(reported);
+
+            await Assert.That(usage).IsNotNull();
 
             bool consistent = Gatehouse.Metering.MeteringConsistency.TryValidate(usage!, out string? discrepancy);
 
