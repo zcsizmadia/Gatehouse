@@ -234,22 +234,41 @@ public class BedrockTranslatorTests
     {
         // Whichever branch is taken, the result has to satisfy the invariant the reconciliation
         // depends on: the cache subsets fit inside the prompt count, and the total adds up.
-        BedrockUsage[] reportedShapes =
-        [
-            // No cache involved.
-            new() { InputTokens = 100, OutputTokens = 20, TotalTokens = 120 },
+        // Written out as four calls rather than a loop over an array, so a failure names the
+        // shape that broke: the stack points at the line, and the line has a comment on it.
+        // A loop would report "one of four" and leave the reader to work out which.
 
-            // Additive: the total accounts for the cache counts on top of the input.
-            new() { InputTokens = 100, OutputTokens = 20, CacheReadInputTokens = 500, CacheWriteInputTokens = 50, TotalTokens = 670 },
+        // No cache involved.
+        await AssertConsistent(new BedrockUsage { InputTokens = 100, OutputTokens = 20, TotalTokens = 120 });
 
-            // Subset: the total is input plus output, so the cache count is already inside.
-            new() { InputTokens = 100, OutputTokens = 20, CacheReadInputTokens = 80, TotalTokens = 120 },
+        // Additive: the total accounts for the cache counts on top of the input.
+        await AssertConsistent(new BedrockUsage
+        {
+            InputTokens = 100,
+            OutputTokens = 20,
+            CacheReadInputTokens = 500,
+            CacheWriteInputTokens = 50,
+            TotalTokens = 670,
+        });
 
-            // No total reported, so additive is assumed.
-            new() { InputTokens = 100, OutputTokens = 20, CacheReadInputTokens = 500 },
-        ];
+        // Subset: the total is input plus output, so the cache count is already inside it.
+        await AssertConsistent(new BedrockUsage
+        {
+            InputTokens = 100,
+            OutputTokens = 20,
+            CacheReadInputTokens = 80,
+            TotalTokens = 120,
+        });
 
-        foreach (BedrockUsage reported in reportedShapes)
+        // No total reported, so additive is assumed — what AWS documents.
+        await AssertConsistent(new BedrockUsage
+        {
+            InputTokens = 100,
+            OutputTokens = 20,
+            CacheReadInputTokens = 500,
+        });
+
+        static async Task AssertConsistent(BedrockUsage reported)
         {
             GatehouseUsage? usage = BedrockTranslator.ToTokenUsage(reported);
 
