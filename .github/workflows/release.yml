@@ -79,6 +79,9 @@ jobs:
         run: ./publish/${{ matrix.exe }} --version
 
       - name: Smoke test
+        # See the same bound in ci.yml: a hung step reports no cause and holds a
+        # runner until the job limit.
+        timeout-minutes: 15
         shell: bash
         run: bash ./.github/scripts/smoke-test.sh "./publish/${{ matrix.exe }}"
 

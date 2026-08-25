@@ -73,6 +73,31 @@ GATEWAY_PID=""
 SAMPLE_PID=""
 CACHE_PID=""
 
+# Stops a background process, with a bound on how long that can take.
+#
+# `wait` on its own is unbounded, and that is a live hazard on Windows: Git Bash's
+# kill delivers a signal a native .NET console process need not act on, and the
+# script then blocks forever. That is exactly how a CI run sat at this step for 45
+# minutes and reported nothing useful — a hang is worse than a failure, because it
+# burns a runner and names no cause.
+#
+# So: ask nicely, poll for a bounded time, then insist. No `wait`, because there is
+# nothing left to wait for once the process is gone and nothing worth waiting for
+# if it refuses to go.
+stop_process() {
+    local pid="${1:-}"
+    [ -n "$pid" ] || return 0
+
+    kill "$pid" 2>/dev/null || true
+
+    for _ in $(seq 1 20); do
+        kill -0 "$pid" 2>/dev/null || return 0
+        sleep 0.25
+    done
+
+    kill -9 "$pid" 2>/dev/null || true
+}
+
 cleanup() {
     local status=$?
 
@@ -193,7 +218,7 @@ echo "PASS: gateway started and reported ready"
 # ------------------------------------------------------------------------------
 # 2. Model listing
 # ------------------------------------------------------------------------------
-models="$(curl --silent --fail --header "$AUTH_HEADER" "http://127.0.0.1:$GATEWAY_PORT/v1/models")"
+models="$(curl --silent --fail --max-time 30 --header "$AUTH_HEADER" "http://127.0.0.1:$GATEWAY_PORT/v1/models")"
 echo "$models" | grep -q 'smoke-model' \
     || fail "/v1/models did not list the configured alias. Got: $models"
 echo "PASS: /v1/models lists the configured alias"
@@ -205,7 +230,7 @@ echo "PASS: /v1/models lists the configured alias"
 stream_output="$WORK_DIR/stream.txt"
 start_ns=$(date +%s%N)
 
-curl --silent --no-buffer --fail \
+curl --max-time 60 --silent --no-buffer --fail \
     --header "$AUTH_HEADER" \
     --header 'Content-Type: application/json' \
     --data '{"model":"smoke-model","stream":true,"messages":[{"role":"user","content":"hello"}]}' \
@@ -258,7 +283,7 @@ echo "PASS: $frame_count separate SSE frames"
 # ------------------------------------------------------------------------------
 # 4. Buffered completion
 # ------------------------------------------------------------------------------
-buffered="$(curl --silent --fail \
+buffered="$(curl --max-time 60 --silent --fail \
     --header "$AUTH_HEADER" \
     --header 'Content-Type: application/json' \
     --data '{"model":"smoke-model","stream":false,"messages":[{"role":"user","content":"hello"}]}' \
@@ -273,7 +298,7 @@ echo "PASS: buffered completion reports provider usage and the serving provider"
 # ------------------------------------------------------------------------------
 # 5. Unknown model
 # ------------------------------------------------------------------------------
-status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+status="$(curl --max-time 30 --silent --output /dev/null --write-out '%{http_code}' \
     --header "$AUTH_HEADER" \
     --header 'Content-Type: application/json' \
     --data '{"model":"not-configured","messages":[{"role":"user","content":"hi"}]}' \
@@ -289,7 +314,7 @@ echo "PASS: unknown model rejected with 404"
 # that serves anonymous callers is the one failure here worth failing the build
 # over, so it is asserted rather than assumed from the fact that the authenticated
 # calls above worked.
-status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+status="$(curl --max-time 30 --silent --output /dev/null --write-out '%{http_code}' \
     --header 'Content-Type: application/json' \
     --data '{"model":"smoke-model","messages":[{"role":"user","content":"hi"}]}' \
     "http://127.0.0.1:$GATEWAY_PORT/v1/chat/completions")"
@@ -351,8 +376,7 @@ if [ "$sample_ready" -ne 1 ]; then
     fail "samples/gatehouse.json did not produce a gateway that starts"
 fi
 
-kill "$SAMPLE_PID" 2>/dev/null || true
-wait "$SAMPLE_PID" 2>/dev/null || true
+stop_process "$SAMPLE_PID"
 echo "PASS: samples/gatehouse.json loads, validates and starts"
 
 # ------------------------------------------------------------------------------
@@ -447,12 +471,12 @@ fi
 cache_body='{"model":"smoke-model","stream":false,"messages":[{"role":"user","content":"cache me"}]}'
 
 # First call populates, second must be served from memory.
-curl --silent --fail --header "Authorization: Bearer $CACHE_SECRET" \
+curl --max-time 60 --silent --fail --header "Authorization: Bearer $CACHE_SECRET" \
     --header 'Content-Type: application/json' --data "$cache_body" \
     "http://127.0.0.1:$CACHE_PORT/v1/chat/completions" > /dev/null \
     || fail "the first cacheable request failed"
 
-cache_header="$(curl --silent --dump-header - --output /dev/null \
+cache_header="$(curl --max-time 60 --silent --dump-header - --output /dev/null \
     --header "Authorization: Bearer $CACHE_SECRET" \
     --header 'Content-Type: application/json' --data "$cache_body" \
     "http://127.0.0.1:$CACHE_PORT/v1/chat/completions" | grep -i '^x-gatehouse-cache:' || true)"
@@ -460,8 +484,7 @@ cache_header="$(curl --silent --dump-header - --output /dev/null \
 echo "$cache_header" | grep -qi 'hit' \
     || { cat "$CACHE_DIR/gateway.log" >&2; fail "the repeated request was not served from cache (header: '$cache_header')"; }
 
-kill "$CACHE_PID" 2>/dev/null || true
-wait "$CACHE_PID" 2>/dev/null || true
+stop_process "$CACHE_PID"
 echo "PASS: a repeated request is served from the response cache"
 
 # ------------------------------------------------------------------------------

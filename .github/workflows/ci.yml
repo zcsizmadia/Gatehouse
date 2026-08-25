@@ -167,6 +167,11 @@ jobs:
           "${{ github.workspace }}/publish/${{ matrix.exe }}" --version
 
       - name: Smoke test — serve a streamed completion
+        # A bound on the whole script, because a hung CI step is worse than a failed
+        # one: it reports no cause and holds a runner until the job limit. This step
+        # normally finishes in two to four minutes — it starts three gateways — so
+        # fifteen is generous for a slow runner and still fails fast on a hang.
+        timeout-minutes: 15
         shell: bash
         # The whole gate in one script: start the published binary, have it proxy a
         # streamed completion from a stub upstream, and assert the chunks arrive.
