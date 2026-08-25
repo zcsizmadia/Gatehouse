@@ -102,7 +102,7 @@ public class ChatCompletionsEndpointTests
                     sse.Data,
                     GatehouseJsonContext.Default.ChatCompletionChunk);
 
-                if (chunk?.Choices.Count > 0)
+                if (chunk is { Choices.Count: > 0 })
                 {
                     text.Append(chunk.Choices[0].Delta.Content);
                 }

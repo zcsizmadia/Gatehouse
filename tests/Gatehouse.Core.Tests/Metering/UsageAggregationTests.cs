@@ -201,7 +201,10 @@ public class UsageAggregationTests
     /// </remarks>
     private sealed class TemporaryDatabase : IDisposable
     {
-        private readonly string _path = Path.Combine(
+        /// <summary>The files SQLite leaves behind: the database and its WAL sidecars.</summary>
+        private static readonly string[] SqliteFileSuffixes = ["", "-wal", "-shm"];
+
+        private readonly string _path = Path.Join(
             Path.GetTempPath(),
             $"gatehouse-usage-{Guid.NewGuid():N}.db");
 
@@ -233,7 +236,7 @@ public class UsageAggregationTests
 
         public void Dispose()
         {
-            foreach (string suffix in (string[])["", "-wal", "-shm"])
+            foreach (string suffix in SqliteFileSuffixes)
             {
                 try
                 {

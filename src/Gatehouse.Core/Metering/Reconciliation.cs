@@ -247,53 +247,80 @@ public static class MeteringReconciliation
         };
     }
 
+    /// <summary>
+    /// Builds one line from whichever sides of it exist.
+    /// </summary>
+    /// <remarks>
+    /// Dispatched on which side is present rather than checked with null-forgiving operators.
+    /// The caller only ever passes a key drawn from the union of the two dictionaries, so at
+    /// least one side is always there — but that invariant lives in the caller, and asserting
+    /// it here with <c>!</c> while also testing for null further down is a contradiction a
+    /// reader has to resolve by hand. CodeQL flagged exactly that. Matching on the pair proves
+    /// the non-nullness to the compiler in each branch instead of asserting it, and states the
+    /// impossible case as an exception rather than leaving it to be a silent
+    /// <see cref="NullReferenceException"/> if the caller ever changes.
+    /// </remarks>
     private static ReconciliationLine BuildLine(
         (string Provider, string Model) key,
         ProviderStatementLine? statement,
         UsageSummary? recorded,
-        ReconciliationTolerance tolerance)
-    {
-        string provider = statement?.Provider ?? recorded!.Provider;
-        string model = statement?.UpstreamModel ?? recorded!.UpstreamModel;
-
-        if (statement is null)
+        ReconciliationTolerance tolerance) => (statement, recorded) switch
         {
-            return new ReconciliationLine
-            {
-                Provider = provider,
-                UpstreamModel = model,
-                Recorded = recorded,
-                Verdict = ReconciliationVerdict.NotOnStatement,
-                Variance = -recorded!.TotalTokens,
-                Explanations =
-                [
-                    $"Gatehouse recorded {recorded.TotalTokens:N0} tokens that the statement "
-                    + "does not mention. Check that the statement covers the same period and "
-                    + "the same provider account.",
-                ],
-            };
-        }
+            (null, null) => throw new ArgumentException(
+                $"Neither side of '{key.Provider}/{key.Model}' has data, so there is nothing to "
+                + "reconcile. Keys must come from the union of the statement and the recorded "
+                + "usage.",
+                nameof(statement)),
 
+            (null, not null) => NotOnStatement(recorded),
+            (not null, null) => NoLocalRecord(statement),
+            _ => Compare(statement, recorded, tolerance),
+        };
+
+    /// <summary>Gatehouse recorded usage the statement says nothing about.</summary>
+    private static ReconciliationLine NotOnStatement(UsageSummary recorded) => new()
+    {
+        Provider = recorded.Provider,
+        UpstreamModel = recorded.UpstreamModel,
+        Recorded = recorded,
+        Verdict = ReconciliationVerdict.NotOnStatement,
+        Variance = -recorded.TotalTokens,
+        Explanations =
+        [
+            $"Gatehouse recorded {recorded.TotalTokens:N0} tokens that the statement "
+            + "does not mention. Check that the statement covers the same period and "
+            + "the same provider account.",
+        ],
+    };
+
+    /// <summary>The provider billed for something Gatehouse has never seen.</summary>
+    private static ReconciliationLine NoLocalRecord(ProviderStatementLine statement)
+    {
         long statementTotal = statement.PromptTokens + statement.CompletionTokens;
 
-        if (recorded is null)
+        return new ReconciliationLine
         {
-            return new ReconciliationLine
-            {
-                Provider = provider,
-                UpstreamModel = model,
-                Statement = statement,
-                Verdict = ReconciliationVerdict.NoLocalRecord,
-                Variance = statementTotal,
-                Explanations =
-                [
-                    $"The provider billed {statementTotal:N0} tokens for '{model}' and "
-                    + "Gatehouse has no record of it at all. A credential for this provider is "
-                    + "very likely in use outside the gateway.",
-                ],
-            };
-        }
+            Provider = statement.Provider,
+            UpstreamModel = statement.UpstreamModel,
+            Statement = statement,
+            Verdict = ReconciliationVerdict.NoLocalRecord,
+            Variance = statementTotal,
+            Explanations =
+            [
+                $"The provider billed {statementTotal:N0} tokens for "
+                + $"'{statement.UpstreamModel}' and Gatehouse has no record of it at all. A "
+                + "credential for this provider is very likely in use outside the gateway.",
+            ],
+        };
+    }
 
+    /// <summary>Both sides exist, so there is a variance to judge.</summary>
+    private static ReconciliationLine Compare(
+        ProviderStatementLine statement,
+        UsageSummary recorded,
+        ReconciliationTolerance tolerance)
+    {
+        long statementTotal = statement.PromptTokens + statement.CompletionTokens;
         long variance = statementTotal - recorded.TotalTokens;
 
         (long explainable, List<string> explanations) = Explain(recorded, variance);
@@ -313,10 +340,12 @@ public static class MeteringReconciliation
                 + "provider account, or a statement covering a different period.");
         }
 
+        // Taken from the statement, which is the side a reader will be holding an invoice for.
+        // Both sides normalise to the same key, so they agree up to case and padding.
         return new ReconciliationLine
         {
-            Provider = provider,
-            UpstreamModel = model,
+            Provider = statement.Provider,
+            UpstreamModel = statement.UpstreamModel,
             Statement = statement,
             Recorded = recorded,
             Verdict = verdict,

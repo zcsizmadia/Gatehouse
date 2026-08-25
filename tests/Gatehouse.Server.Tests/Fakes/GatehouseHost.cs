@@ -101,8 +101,8 @@ internal sealed class GatehouseHost : IAsyncDisposable
         string? fallbackBaseUrl = null,
         bool cacheEnabled = false)
     {
-        string databasePath = Path.Combine(Path.GetTempPath(), $"gatehouse-it-{Guid.NewGuid():N}.db");
-        string configPath = Path.Combine(Path.GetTempPath(), $"gatehouse-it-{Guid.NewGuid():N}.json");
+        string databasePath = Path.Join(Path.GetTempPath(), $"gatehouse-it-{Guid.NewGuid():N}.db");
+        string configPath = Path.Join(Path.GetTempPath(), $"gatehouse-it-{Guid.NewGuid():N}.json");
 
         Dictionary<string, object> providers = new(StringComparer.OrdinalIgnoreCase)
         {

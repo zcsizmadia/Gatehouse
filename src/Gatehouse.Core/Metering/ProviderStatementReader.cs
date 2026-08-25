@@ -23,6 +23,15 @@ public static class ProviderStatementReader
     /// <summary>The header this reader expects, in any column order.</summary>
     public const string ExpectedColumns = "provider, model, prompt_tokens, completion_tokens";
 
+    /// <summary>The columns a statement must carry, in the order <see cref="ExpectedColumns" /> names them.</summary>
+    /// <remarks>
+    /// A named static rather than a collection expression cast inline in the loop. The cast was
+    /// redundant, and a field says once what the parser requires instead of burying it in a
+    /// control-flow statement.
+    /// </remarks>
+    private static readonly string[] RequiredColumns =
+        ["provider", "model", "prompt_tokens", "completion_tokens"];
+
     /// <summary>
     /// Parses statement lines from CSV text.
     /// </summary>
@@ -111,14 +120,14 @@ public static class ProviderStatementReader
             columns[name == "upstream_model" ? "model" : name] = i;
         }
 
-        foreach (string required in (string[])["provider", "model", "prompt_tokens", "completion_tokens"])
+        // Filtered in the sequence rather than with an `if` inside the loop, so the loop
+        // variable can be called what it is. Every column is reported, not just the first: an
+        // operator fixing a header should need one pass.
+        foreach (string missing in RequiredColumns.Where(column => !columns.ContainsKey(column)))
         {
-            if (!columns.ContainsKey(required))
-            {
-                problems.Add(
-                    $"Line {lineNumber}: the header is missing a '{required}' column. "
-                    + $"Expected: {ExpectedColumns}");
-            }
+            problems.Add(
+                $"Line {lineNumber}: the header is missing a '{missing}' column. "
+                + $"Expected: {ExpectedColumns}");
         }
 
         return problems.Count == 0 ? columns : null;
