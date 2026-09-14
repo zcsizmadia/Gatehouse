@@ -102,7 +102,7 @@ RUN rm -f /app/*.dbg /app/*.pdb
 # runtime-deps rather than aspnet: the binary is self-contained, so all this base
 # provides is libc and the TLS stack. "chiselled" strips the shell and package
 # manager; InvariantGlobalization=true in the project means ICU is not needed.
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled@sha256:afd8faf9aca00ee69b44b33631665e654e2423e143b6362dffe52c006cd7c4e6 AS runtime
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled@sha256:18d4848091a40d13dbfdd6a8340c1657dc3e2f2d7fa2f042e9d162e68669dbc9 AS runtime
 
 # OCI labels, so `docker inspect` answers the provenance questions an auditor asks.
 LABEL org.opencontainers.image.title="Gatehouse" \
